@@ -1,0 +1,27 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.env
+pcos-ai-agent-*.json
+credentials.json
+client_secret*.json
+.DS_Store
+faiss_index/
+
+# Reference column JSON files
+*_columns_reference.json
+
+# Local CSV fallback storage
+collected_pcos_data.csv
+feedback.csv
+*.csv
+
+# Raw training data CSVs (not needed at runtime)
+SM_Data_Translated*.csv
+Self-modified*.csv
+
+# Root logo duplicate (served from frontend/static/)
+/logo.jpg
+!frontend/static/logo.jpg

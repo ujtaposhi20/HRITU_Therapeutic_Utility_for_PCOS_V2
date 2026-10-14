@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+pcos-ai-agent-*.json
+*_columns_reference.json
+collected_pcos_data.csv
+feedback.csv
+*.csv
+Report.md

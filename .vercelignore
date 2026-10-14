@@ -1,0 +1,21 @@
+# Documentation and diagrams (not needed inside serverless function)
+docs/
+*.md
+*.mmd
+*.png
+
+# Large offline reference files
+backend/rf_columns_reference.json
+backend/dt_columns_reference.json
+backend/pcos-ai-agent-*.json
+backend/collected_pcos_data.csv
+backend/feedback.csv
+
+# Virtual environments and caches
+backend/venv/
+**/venv/**
+__pycache__/
+*.pyc
+.DS_Store
+.git/
+.gitignore

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HRITU — PCOS Awareness & Health Assistant</title>
+    <meta name="description" content="HRITU is an AI companion for PCOS awareness, lifestyle guidance, and pregnancy support.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+    <!-- ── UNIFIED CHAT INTERFACE ────────────────────────────────────────── -->
+    <div class="chat-container" id="chat-container">
+        <header class="chat-header">
+            <img src="/static/logo.jpg" alt="HRITU Logo" class="chat-header-logo">
+
+            <div class="header-info">
+                <h1 id="app-header-title">HRITU</h1>
+                <p id="app-header-subtitle">Health Assistant</p>
+            </div>
+
+            <!-- Language Toggle -->
+            <button id="landing-lang-toggle" class="lang-toggle-btn" title="Switch Language (English / বাংলা)" aria-label="Switch Language">
+                <span id="landing-lang-en" class="lang-opt active">EN</span>
+                <span class="lang-sep">|</span>
+                <span id="landing-lang-bn" class="lang-opt">বাংলা</span>
+            </button>
+
+            <!-- Theme Toggle -->
+            <button id="theme-toggle" class="theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
+                <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <svg class="moon-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+            </button>
+
+            <!-- ↻ New chat button (replaces End Chat) -->
+            <button id="header-new-chat-btn" class="header-new-chat-btn" title="Start a fresh chat">
+                <span class="reset-icon">↻</span>
+                <span id="header-new-chat-text">New chat</span>
+            </button>
+        </header>
+
+        <div class="settings-bar">
+            <div class="voice-toggle-wrapper">
+                <span id="voice-toggle-label" class="voice-toggle-label">Read Aloud</span>
+                <label class="switch">
+                    <!-- Default Read-Aloud OFF -->
+                    <input type="checkbox" id="voice-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Module Selection Grid (adapted from ujt_codes) -->
+        <div class="features-selection-grid" id="module-selector">
+            <button class="feat-card" id="m1-btn" data-mode="prediction">
+                <span class="feat-icon">🩺</span>
+                <i class="feat-label" data-en="PCOS check" data-bn="PCOS পরীক্ষা">PCOS check</i>
+            </button>
+            <button class="feat-card" id="m3-btn" data-mode="talk">
+                <span class="feat-icon">💬</span>
+                <i class="feat-label" data-en="Talk" data-bn="মনের কথা">Talk</i>
+            </button>
+            <button class="feat-card" id="m2-btn" data-mode="lifestyle">
+                <span class="feat-icon">🌿</span>
+                <i class="feat-label" data-en="Lifestyle" data-bn="লাইফস্টাইল">Lifestyle</i>
+            </button>
+            <button class="feat-card" id="m4-btn" data-mode="learn">
+                <span class="feat-icon">📖</span>
+                <i class="feat-label" data-en="Learn cycle" data-bn="মাসিক শিখি">Learn cycle</i>
+            </button>
+        </div>
+
+        <div id="chat-messages" class="chat-messages">
+            <!-- Messages appear here -->
+        </div>
+
+        <div id="disclaimer-bar" class="disclaimer-bar">
+            Note: This is not a medical diagnosis. Please consult a healthcare professional.
+        </div>
+
+        <div class="chat-input-area" id="chat-input-area">
+            <button id="mic-btn" class="mic-btn" type="button" aria-label="Voice input" title="Voice Input (Speech-to-Text)">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+            <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+            <button id="send-btn" class="send-btn" aria-label="Send message">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+            <div id="send-loading" class="send-loading hidden"></div>
+        </div>
+
+        <footer class="app-footer chat-footer">
+            <p>© 2026 - HRITU TN.</p>
+        </footer>
+    </div>
+
+    <!-- ── MODALS ────────────────────────────────────────────────────────── -->
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content modal-small">
+            <h2 id="confirm-modal-title">End Conversation?</h2>
+            <p id="confirm-modal-text">Your responses will be processed to analyze pattern observations. Proceed?</p>
+            <div class="modal-actions">
+                <button id="confirm-yes" class="btn-primary">Yes, Proceed</button>
+                <button id="confirm-no" class="btn-secondary">Not Yet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Early Exit Modal -->
+    <div id="early-exit-modal" class="modal">
+        <div class="modal-content modal-small">
+            <h2 id="early-modal-title">More Information Needed</h2>
+            <p id="early-modal-text">To generate an accurate pattern observation, mandatory core health features are required. Please continue the conversation to provide these details.</p>
+            <div class="modal-actions">
+                <button id="early-keep-chatting" class="btn-primary">Keep Chatting</button>
+                <button id="early-end-anyway" class="btn-secondary">End Anyway</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal with SHAP & LIME Explainability -->
+    <div id="result-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" id="result-close-btn">&times;</span>
+            <h2 id="result-modal-title">Pattern Observation Summary</h2>
+            <div id="result-loading" class="result-loading">
+                <div class="loading-spinner"></div>
+                <p id="result-loading-text">Processing conversation metrics and running model analysis...</p>
+            </div>
+            <div id="result-content" style="display:none;">
+                <div id="analysis-pattern" class="analysis-text"></div>
+                
+                <!-- SHAP & LIME Explainability View -->
+                <div id="explainability-section" class="explainability-section" style="display:none;">
+                    <h3 id="explainability-title">Key Factors Driving This Observation</h3>
+                    <div id="explainability-content" class="explainability-content"></div>
+                </div>
+
+                <div class="result-divider"></div>
+                <div id="analysis-suggestion" class="highlight-text"></div>
+                <div class="prediction-badges" id="prediction-badges" style="display:none;">
+                    <span class="badge" id="rf-badge">RF: —</span>
+                    <span class="badge" id="dt-badge">DT: —</span>
+                </div>
+                <div class="result-actions">
+                    <button id="download-btn" class="download-btn">Download Report</button>
+                    <button id="new-chat-btn" class="new-chat-btn">Start New Chat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Modal -->
+    <div id="feedback-modal" class="modal">
+        <div class="modal-content modal-small">
+            <h2 id="feedback-modal-title">Feedback</h2>
+            <p id="feedback-modal-subtitle">Rate your experience to help us improve:</p>
+            <div class="star-rating" id="star-rating">
+                <span class="star" data-value="1">★</span>
+                <span class="star" data-value="2">★</span>
+                <span class="star" data-value="3">★</span>
+                <span class="star" data-value="4">★</span>
+                <span class="star" data-value="5">★</span>
+            </div>
+            <p class="star-label" id="star-label">Select a rating</p>
+            <textarea id="feedback-comment" class="feedback-comment" placeholder="Optional comments..." rows="3"></textarea>
+            <button id="submit-feedback-btn" class="btn-primary" disabled>Submit Feedback</button>
+            <button id="skip-feedback-btn" class="btn-text">Skip</button>
+        </div>
+    </div>
+
+    <!-- Thank You Modal -->
+    <div id="thankyou-modal" class="modal">
+        <div class="modal-content modal-small">
+            <h2 id="thankyou-title">Thank You</h2>
+            <p id="thankyou-subtitle">Your feedback has been recorded.</p>
+            <button id="thankyou-close-btn" class="btn-primary">Close</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
