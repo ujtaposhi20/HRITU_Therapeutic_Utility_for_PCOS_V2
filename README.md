@@ -16,7 +16,7 @@ HRITU was built for an HCI user study at BRAC University.
 
 HRITU has four parts:
 
-1. **PCOS Check** – Asks 18 short following Rotterdam criteria questions about age, height, weight, periods, and symptoms. The user can answer 5 more lifestyle questions if they want. HRITU then shows all the answers so the user can fix any mistakes. After the user confirms, it gives a result that is a screening hint, not a diagnosis.
+1. **PCOS Check** – Asks 18 short questions following Rotterdam criteria about age, height, weight, periods, and symptoms. The user can answer 5 more lifestyle questions if they want. HRITU then shows all the answers so the user can fix any mistakes. After the user confirms, it gives a result that is a screening hint, not a diagnosis.
 2. **Talk** – A space to talk about feelings, body changes, fertility worries, and family or social pressure.
 3. **Lifestyle** – Food and exercise tips that fit everyday life in Bangladesh, such as red rice, leafy greens, and local fish.
 4. **Learn Cycle** – Explains the four phases of the menstrual cycle, with a short quiz.
