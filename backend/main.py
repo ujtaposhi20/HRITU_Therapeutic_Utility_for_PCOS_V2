@@ -1,4 +1,17 @@
+"""
+main.py — FastAPI backend for the PCOS AI Agent.
+
+Loads pre-trained RF & DT models from 'ml models/' and uses them
+for ensemble prediction after the chat ends.
+
+Features:
+  • Background feature extraction during chat (for faster end-chat)
+  • Google Sheets persistence (with local CSV fallback)
+"""
+
 from fastapi import FastAPI, BackgroundTasks
+# [WhatsApp integration — commented out due to payment issue, restore when ready]
+# from fastapi import Request, Response, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -10,10 +23,12 @@ import csv
 import re
 import uuid
 import asyncio
+# [WhatsApp integration — commented out]
+# import httpx
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
-
+# Resolve absolute paths based on the location of main.py
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from dotenv import load_dotenv
@@ -49,10 +64,13 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
 @app.get("/")
 def read_root():
     return FileResponse(HTML_PATH)
 
+
+# ── Load Pre-trained Models ──────────────────────────────────────────────────
 ML_DIR = os.path.join(BASE_DIR, "ml models")
 
 rf_model = None
@@ -89,12 +107,19 @@ try:
 except Exception as e:
     print(f"⚠️  SVM model load error: {e}")
 
+
+# ── LLM Assistant (Google Gemini 2.0 Flash / 1.5 Flash / Groq) ───────────────
 api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("GROQ_API_KEY", "")
 assistant = PCOSAssistant(api_key=api_key) if api_key else None
 
+
+# ── Background Feature Cache ────────────────────────────────────────────────
+# Maps session_id → { "features": dict, "updated_at": datetime }
 session_features: Dict[str, Dict] = {}
+# Maps session_id → { "learn_step": int | str, ... }
 session_learn_state: Dict[str, Dict] = {}
 
+# How many user messages before triggering background extraction
 EXTRACTION_INTERVAL = 3
 
 
@@ -113,6 +138,8 @@ async def _async_background_extract(session_id: str, history: List[Dict[str, str
     except Exception as e:
         print(f"⚠️ Async background extraction error: {e}")
 
+
+# ── Request / Response Models ────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = Field(default_factory=list)
@@ -125,6 +152,7 @@ class ChatRequest(BaseModel):
     screening_state: Optional[Dict[str, Any]] = None
     learn_state: Optional[Dict[str, Any]] = None
 
+
 class EndChatRequest(BaseModel):
     history: List[Dict[str, str]]
     session_id: Optional[str] = None
@@ -135,6 +163,7 @@ class FeedbackRequest(BaseModel):
     session_id: str
     rating: int  # 1-5
     comment: Optional[str] = ""
+
 
 
 def _is_informative_message(message: str) -> bool:
@@ -161,6 +190,8 @@ def _is_informative_message(message: str) -> bool:
         
     return True
 
+
+# ── Chat Endpoint ────────────────────────────────────────────────────────────
 @app.post("/chat")
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     sid = request.session_id or str(uuid.uuid4())
@@ -319,21 +350,26 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         pattern_statement = None
         if assistant:
             try:
-                pattern_statement = assistant.generate_result_statement(final_verdict, extracted_features, hist)
+                pattern_statement = assistant.generate_result_statement(final_verdict, extracted_features, hist, lang=lang)
             except Exception as e:
                 print(f"Statement generation error: {e}")
-                pattern_statement = assistant._fallback_result_message(rf_label, dt_label)
+                pattern_statement = assistant._fallback_result_message(rf_label, dt_label, lang=lang)
         else:
             pattern_statement = (
-                "Our observation indicates patterns consistent with PCOS. Please visit a gynecologist or endocrinologist for clinical confirmation. 🌸"
+                "🟠 **Observation Status:** Noticeable PCOS-associated patterns observed. Please schedule a clinical evaluation with a licensed gynecologist or endocrinologist, and explore our 🌿 Lifestyle Advice module for tailored meal and routine guidance."
                 if "Suspected" in final_verdict
-                else "Our observation indicates minimal signs commonly linked with PCOS. Maintain your healthy habits and consult a doctor if symptoms arise! 🌸"
+                else "🟢 **Observation Status:** Minimal PCOS-associated patterns observed. Continue maintaining your balanced daily routine, explore our 🌿 Lifestyle Advice module for healthy daily habits, and consult a physician if symptoms emerge."
             )
 
         # Background save to Google Sheets (and local CSV fallback)
         background_tasks.add_task(
             _background_save_and_cleanup, extracted_features, rf_label, dt_label, svm_label, final_verdict, sid
         )
+
+        download_chip = "📥 রিপোর্ট ডাউনলোড (PDF)" if lang == "bn" else "📥 Download Report (PDF)"
+        lifestyle_chip = "🌿 লাইফস্টাইল পরামর্শ" if lang == "bn" else "🌿 Lifestyle Advice"
+        feedback_chip = "⭐ মতামত দিন" if lang == "bn" else "⭐ Feedback"
+        new_chat_chip = "↻ নতুন চ্যাট" if lang == "bn" else "↻ Start New Chat"
 
         return {
             "response": f"{bot_reply}\n\n---\n\n{pattern_statement}",
@@ -345,7 +381,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
             "final_verdict": final_verdict,
             "explainability": explainability_data,
             "screening_state": current_screening_state,
-            "chips": []
+            "chips": [download_chip, lifestyle_chip, feedback_chip, new_chat_chip]
         }
 
     # 5. Module 2: Lifestyle, Diet & Routine Advice (Two-Tier Hybrid RAG)
@@ -574,11 +610,12 @@ def end_chat(request: EndChatRequest, background_tasks: BackgroundTasks):
             "final_verdict": "Insufficient Data"
         }
     elif assistant:
+        lang_pred = getattr(request, "language", "en") or "en"
         try:
-            pattern = assistant.generate_result_statement(final_verdict, extracted, request.history)
+            pattern = assistant.generate_result_statement(final_verdict, extracted, request.history, lang=lang_pred)
         except Exception as e:
             print(f"Statement generation error: {e}")
-            pattern = assistant._fallback_result_message(rf_label, dt_label)
+            pattern = assistant._fallback_result_message(rf_label, dt_label, lang=lang_pred)
         suggestion = (
             "Remember: This is a pattern-matching observation, NOT a medical diagnosis. "
             "For proper evaluation, please visit a gynecologist or endocrinologist. "
@@ -598,12 +635,18 @@ def end_chat(request: EndChatRequest, background_tasks: BackgroundTasks):
     # Step 5: Save to Google Sheets (or CSV fallback) — ASYNC via background task
     background_tasks.add_task(_background_save_and_cleanup, extracted, rf_label, dt_label, svm_label, final_verdict, session_id)
 
-    # Return to UI with explainability findings
+    download_chip = "📥 রিপোর্ট ডাউনলোড (PDF)" if lang_pred == "bn" else "📥 Download Report (PDF)"
+    lifestyle_chip = "🌿 লাইফস্টাইল পরামর্শ" if lang_pred == "bn" else "🌿 Lifestyle Advice"
+    feedback_chip = "⭐ মতামত দিন" if lang_pred == "bn" else "⭐ Feedback"
+    new_chat_chip = "↻ নতুন চ্যাট" if lang_pred == "bn" else "↻ Start New Chat"
+
+    # Return to UI with explainability findings and action chips
     return {
         "session_id": session_id,
         "pattern": pattern,
         "suggestion": suggestion,
         "explainability": explainability_data,
+        "chips": [download_chip, lifestyle_chip, feedback_chip, new_chat_chip]
     }
 
 

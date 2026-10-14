@@ -87,6 +87,8 @@ def run_web_search(query: str, max_results: int = 3, domain_filter: str = None) 
 class PCOSAssistant:
     def __init__(self, api_key: str):
         self.api_key = api_key
+        # Primary: gemini-flash-latest (Google's always-current, fastest flash model)
+        # Fallback: gemini-flash-lite-latest (separate quota pool for zero downtime)
         self.primary_model = os.getenv("PRIMARY_MODEL", os.getenv("GEMINI_MODEL", "gemini-flash-latest"))
         self.fallback_model = os.getenv("FALLBACK_MODEL", "gemini-flash-lite-latest")
         self.llm = self._create_llm(self.primary_model, temperature=0.3)
@@ -128,11 +130,12 @@ class PCOSAssistant:
         else:
             raise RuntimeError("Neither langchain-google-genai nor langchain-groq is available.")
 
-    def _invoke_llm_resilient(self, prompt, inputs=None, temperature=0.3, max_tokens=1024):
+    def _invoke_llm_resilient(self, prompt, inputs=None, temperature=0.3, max_tokens=1024, is_json=False):
         """Invoke LLM with primary model (gemini-flash-latest), fallback to gemini-flash-lite-latest, and tertiary Groq fallback."""
         inputs = inputs or {}
+        # 1. Try Primary (Gemini Flash)
         try:
-            primary_llm = self._create_llm(self.primary_model, temperature=temperature, max_tokens=max_tokens)
+            primary_llm = self._create_llm(self.primary_model, temperature=temperature, max_tokens=max_tokens, is_json=is_json)
             chain = prompt | primary_llm | StrOutputParser()
             return chain.invoke(inputs)
         except Exception as e:
@@ -140,26 +143,37 @@ class PCOSAssistant:
 
         # 2. Try Secondary (Gemini Flash Lite)
         try:
-            fallback_llm = self._create_llm(self.fallback_model, temperature=temperature, max_tokens=max_tokens)
+            fallback_llm = self._create_llm(self.fallback_model, temperature=temperature, max_tokens=max_tokens, is_json=is_json)
             chain = prompt | fallback_llm | StrOutputParser()
             return chain.invoke(inputs)
         except Exception as fallback_err:
             print(f"⚠️ Secondary model ({self.fallback_model}) error: {fallback_err}. Checking tertiary Groq fallback...")
 
+        # 3. Tertiary Fallback: Groq (if GROQ_API_KEY is available)
         groq_key = os.getenv("GROQ_API_KEY")
         if groq_key and ChatGroq is not None:
             try:
                 print("🔄 Invoking tertiary Groq fallback (qwen/qwen3.8-27b)...")
-                groq_llm = ChatGroq(model_name="qwen/qwen3.8-27b", groq_api_key=groq_key, temperature=temperature, timeout=6.0, max_retries=1)
+                groq_kwargs = {
+                    "model_name": "qwen/qwen3.8-27b",
+                    "groq_api_key": groq_key,
+                    "temperature": temperature,
+                    "timeout": 8.0,
+                    "max_retries": 1
+                }
+                if is_json:
+                    groq_kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+                groq_llm = ChatGroq(**groq_kwargs)
                 chain = prompt | groq_llm | StrOutputParser()
                 return chain.invoke(inputs)
             except Exception as groq_err:
-                print(f" Tertiary Groq invocation error: {groq_err}")
+                print(f"❌ Tertiary Groq invocation error: {groq_err}")
 
         raise RuntimeError("All LLM providers and fallbacks exhausted.")
 
     def chat_with_context(self, history, message, extracted_features=None, language="en"):
         """Conversational chat referencing RAG context if applicable. Uses Smart Memory and truncated history."""
+        # Check if the title was used in any of the last 5 assistant responses
         title_used_recently = False
         assistant_responses = []
         for msg in history:
@@ -175,6 +189,8 @@ class PCOSAssistant:
                 title_used_recently = True
                 break
 
+        # Terminology Lock-in: Scan conversation history to check which term is used
+        # We look at all messages in history (both user and assistant) and the current user message.
         all_messages_chronological = list(history) + [{"role": "user", "content": message}]
         term_used = "PCOS"  # Default
         for msg in reversed(all_messages_chronological):
@@ -191,7 +207,7 @@ class PCOSAssistant:
 
         other_term = "PMOS" if term_used == "PCOS" else "PCOS"
 
-        # Privacy assurance
+        # Privacy assurance: Scan past assistant messages to see if privacy has been assured
         privacy_assured = False
         for content in assistant_responses:
             content_lower = content.lower()
@@ -211,11 +227,14 @@ class PCOSAssistant:
                 "Keep this assurance as short as possible but clear and warm, and always place it AFTER the single hook question. In Banglish mode, you MUST translate this privacy assurance into native Bangla script (e.g., 'তোমার সব তথ্য সম্পূর্ণ গোপন ও সুরক্ষিত থাকবে।') and place it at the very end of the Bengali text inside the hidden <tts> tag, so the native voice reads it as well.\n"
             )
 
+        # ── 1. Intent Recognition & Domain Guardrail ──
         is_related = True
         requires_search = False
         search_query = None
 
+        # Latency optimization: fast regex/keyword lookup for standard greetings, simple replies, and numbers
         message_clean = message.strip().lower()
+        # Remove common punctuation for matching
         message_clean_stripped = re.sub(r'[.,\/#!$%\^&\*;:{}=\-_`~()?]', '', message_clean)
         
         is_greeting = message_clean_stripped in {
@@ -239,11 +258,12 @@ class PCOSAssistant:
             try:
                 classify_prompt = ChatPromptTemplate.from_messages([
                     ("system", (
-                        "You are an intent classifier for a PCOS and Women's Health AI assistant.\n"
+                        "You are an intent classifier for a PCOS and Women's Health AI assistant (HRITU).\n"
+                        "CRITICAL KNOWLEDGE: PCOS (Polycystic Ovary Syndrome) and PMOS (Polyendocrine Metabolic Ovarian Syndrome) are the EXACT SAME condition. In May 2026, an international consensus published in The Lancet officially renamed PCOS to PMOS. Any message referencing PMOS is 100% in-domain women's health and PCOS.\n"
                         "Analyze the user's current message and the conversation history, and return a JSON object with the following keys:\n"
-                        "- 'is_related': boolean. Set to true if the message/query is related to health, diet, lifestyle, sleep, exercise, symptoms, PCOS, women's health, friendly chatting/greeting, compliments/casual feedback (like 'Wow!', 'Impressive!', 'Ok', 'Acha'), or queries about the assistant's name/identity/meaning (such as what 'HRITU' stands for or what the name means). Crucially, you MUST also set this to true if the user is answering a previous question, providing personal profile metrics (e.g., age, height, weight, BMI), or responding with cycle/symptom details (e.g., 'I am 24', '55 kg', 'regular', 'yes', 'no'). Set to false ONLY if the message is completely unrelated to health or lifestyle and is an out-of-scope request (e.g., coding/programming, software engineering, politics, math questions, general news).\n"
-                        "- 'requires_search': boolean. Set to true ONLY if the user's query is a specific lifestyle, diet, or symptom-related question that demands research or medical validation (e.g., asking about specific food items' safety for PCOS, detailed workout routines, or scientific facts about symptoms). Set to false for standard, everyday conversation turns, greetings, simple replies, and general chatting that does not require real-time web verification.\n"
-                        "- 'search_query': string or null. If 'requires_search' is true, provide a high-quality, targeted search query in English to look up latest research, evidence-based lifestyle/dietary management protocols, or holistic wellness routines from authentic medical sources (e.g., 'PCOS diet plan insulin resistance evidence based' or 'PCOS sleep quality exercise protocol research'). Otherwise, set to null.\n"
+                        "- 'is_related': boolean. Set to true if the message/query is related to health, diet, lifestyle, sleep, exercise, symptoms, PCOS, PMOS, women's health, friendly chatting/greeting, compliments/casual feedback (like 'Wow!', 'Impressive!', 'Ok', 'Acha'), or queries about the assistant's name/identity/meaning (such as what 'HRITU' stands for or what the name means). Crucially, you MUST also set this to true if the user is answering a previous question, providing personal profile metrics (e.g., age, height, weight, BMI), or responding with cycle/symptom details (e.g., 'I am 24', '55 kg', 'regular', 'yes', 'no'). Set to false ONLY if the message is completely unrelated to health or lifestyle and is an out-of-scope request (e.g., coding/programming, software engineering, politics, math questions, general news).\n"
+                        "- 'requires_search': boolean. Set to true ONLY if the user's query is a specific lifestyle, diet, or symptom-related question that demands research or medical validation (e.g., asking about specific food items' safety for PCOS/PMOS, detailed workout routines, scientific facts about symptoms, or PMOS renaming details). Set to false for standard, everyday conversation turns, greetings, simple replies, and general chatting that does not require real-time web verification.\n"
+                        "- 'search_query': string or null. If 'requires_search' is true, provide a high-quality, targeted search query in English to look up latest research, evidence-based lifestyle/dietary management protocols, or holistic wellness routines from authentic medical sources (e.g., 'PCOS PMOS diet plan insulin resistance evidence based' or 'PMOS PCOS renaming Lancet research'). Otherwise, set to null.\n"
                         "\n"
                         "FEW-SHOT EXAMPLES:\n"
                         "\n"
@@ -319,6 +339,15 @@ class PCOSAssistant:
                         "  \"search_query\": null\n"
                         "}}\n"
                         "\n"
+                        "Example 9:\n"
+                        "User: What is PMOS? Is it the same as PCOS?\n"
+                        "Response JSON:\n"
+                        "{{\n"
+                        "  \"is_related\": true,\n"
+                        "  \"requires_search\": true,\n"
+                        "  \"search_query\": \"PMOS PCOS renaming Lancet Polyendocrine Metabolic Ovarian Syndrome\"\n"
+                        "}}\n"
+                        "\n"
                         "Respond ONLY with a valid JSON object."
                     )),
                     ("placeholder", "{chat_history}"),
@@ -333,13 +362,15 @@ class PCOSAssistant:
                     role = "human" if msg["role"] == "user" else "ai"
                     formatted_classify_history.append((role, msg["content"]))
 
-                classify_llm = self._create_llm(self.primary_model, temperature=0, is_json=True)
-
-                classify_chain = classify_prompt | classify_llm | StrOutputParser()
-                classify_res = classify_chain.invoke({
-                    "chat_history": formatted_classify_history,
-                    "input": message
-                })
+                classify_res = self._invoke_llm_resilient(
+                    classify_prompt,
+                    {
+                        "chat_history": formatted_classify_history,
+                        "input": message
+                    },
+                    temperature=0,
+                    is_json=True
+                )
 
                 res_json = json.loads(classify_res)
                 is_related = res_json.get("is_related", True)
@@ -350,10 +381,11 @@ class PCOSAssistant:
                 is_related = True
                 requires_search = False
 
+        # ── 2. Polite Refusal (Guardrail Enforcement) ──
         if not is_related:
             try:
                 refusal_system_msg = (
-                    f"You are a caring, empathetic, warm 'big sister' AI assistant focused on {term_used} (Polycystic Ovary Syndrome) awareness.\n"
+                    f"You are a caring, empathetic, warm 'big sister' AI assistant focused on {term_used} (Polycystic Ovary Syndrome / Polyendocrine Metabolic Ovarian Syndrome) awareness.\n"
                     "If the user asks your name or who you are, your name is HRITU (in English and Banglish), or ঋতু (in Bangla).\n"
                     "If the user asks what 'HRITU' stands for or its meaning, proudly reply that it stands for 'Human-centered Responsive & Integrated Therapeutic Utility' and do not explain more than that.\n"
                     f"The user has asked a question or made a request that is outside your domain of {term_used} and Women's Health. "
@@ -395,10 +427,10 @@ class PCOSAssistant:
             except Exception as e:
                 print(f"Refusal generation error: {e}")
                 if re.search(r'[\u0980-\u09FF]', message):
-                    return self._sanitize_response("আপু, আমি দুঃখিত, তবে আমি শুধু PCOS এবং মহিলাদের স্বাস্থ্য নিয়ে কথা বলতে পারি। অন্য বিষয়ে আমি সাহায্য করতে পারব না। 😊", title_used_recently)
-                return self._sanitize_response("I'm sorry, sister, but I can only chat about health and PCOS! 😊", title_used_recently)
+                    return self._sanitize_response("আপু, আমি দুঃখিত, তবে আমি শুধু PCOS / PMOS এবং মহিলাদের স্বাস্থ্য নিয়ে কথা বলতে পারি। অন্য বিষয়ে আমি সাহায্য করতে পারব না। 😊", title_used_recently)
+                return self._sanitize_response("I'm sorry, sister, but I can only chat about health and PCOS / PMOS! 😊", title_used_recently)
 
-        # RAG
+        # ── 3. Two-Tier Hybrid RAG Context ──
         context = "No additional context."
         if requires_search:
             rag_query = search_query or message
@@ -411,6 +443,8 @@ class PCOSAssistant:
                 context = run_web_search(search_query)
                 if context and context != "No additional web search context found.":
                     print(f"🔍 Tier-2 DuckDuckGo fallback for general chat")
+
+        # ── 4. Main Chat System Prompt with Overhauled Logic ──
         system_prompt = (
             "You are a Subject Matter Expert (SME) PCOS researcher and a supportive companion named Zanet (in English), Jannat (in Banglish), or জান্নাত (in Bangla). "
             "If the user asks your name or who you are, use the appropriate version. Do not introduce yourself by name unless asked. "
@@ -509,6 +543,15 @@ class PCOSAssistant:
 
         # Format the system prompt to apply dynamic rebrand and terminology lock-in
         system_prompt_formatted = system_prompt.replace("PCOS", term_used).replace("Zanet", "HRITU").replace("Jannat", "HRITU").replace("জান্নাত", "ঋতু")
+
+        # Explicit PCOS & PMOS Equivalence Directive (appended so it is NEVER mangled by string replace)
+        system_prompt_formatted += (
+            "\n\nCRITICAL CLINICAL DIRECTIVE — PCOS & PMOS ARE THE EXACT SAME CONDITION:\n"
+            "- PCOS (Polycystic Ovary Syndrome) and PMOS (Polyendocrine Metabolic Ovarian Syndrome) refer to the EXACT SAME condition.\n"
+            "- In May 2026, an international expert consensus published in The Lancet officially renamed PCOS to PMOS. The historical name was misleading because the ultrasound findings are immature follicles (antral follicles), not true cysts, and the disorder is fundamentally a whole-body endocrine and metabolic condition (insulin resistance, androgen excess) rather than merely an ovarian problem.\n"
+            "- Whenever the user mentions 'PMOS', immediately understand that she is referring to PCOS (and vice versa). All symptoms (cycle irregularities, hirsutism, acne, weight changes, insulin resistance), diagnostic criteria (e.g. Rotterdam), and management protocols (balanced low-GI nutrition, movement, sleep, stress reduction) are 100% identical.\n"
+            "- If the user asks what PMOS is, or whether PMOS and PCOS are the same, clearly and reassuringly explain the official May 2026 The Lancet renaming: that PMOS stands for Polyendocrine Metabolic Ovarian Syndrome, it is the new medical name for PCOS, and they are the exact same condition. Never hallucinate differences or treat them as separate diseases.\n"
+        )
         if privacy_instruction:
             system_prompt_formatted += privacy_instruction
 
@@ -531,9 +574,11 @@ class PCOSAssistant:
             ("system", "[SYSTEM TRUTH OVERRIDE - CRITICAL MEMORY] The following facts have already been extracted and confirmed. You are STRICTLY PROHIBITED from asking the user for this information again. If the chat history contradicts this block, trust this block implicitly: {smart_memory_json}"),
             ("human", "{input}"),
         ])
+
+        # Smart Memory Context & Pre-Flight Knowledge Check
         memory_context = ""
         missing_features_context = ""
-
+        # Smart Memory JSON construction
         smart_memory_dict = {}
         if extracted_features:
             smart_memory_dict = {k: v for k, v in extracted_features.items() if v is not None and v != "None" and v != [] and str(v).strip() != ""}
@@ -543,6 +588,7 @@ class PCOSAssistant:
         is_bangladeshi = True  # Default to True based on primary user group
 
         if extracted_features:
+            # Check BMI
             bmi_val = extracted_features.get("bmi")
             try:
                 if bmi_val is not None:
@@ -550,6 +596,8 @@ class PCOSAssistant:
                         has_high_bmi = True
             except (ValueError, TypeError):
                 pass
+
+            # Check if user explicitly specifies another region
             region = extracted_features.get("region")
             if region and region != "None" and str(region).strip() != "":
                 region_str = str(region).lower()
@@ -558,7 +606,8 @@ class PCOSAssistant:
                     is_bangladeshi = False
 
             known_facts = []
-
+            
+            # Map technical keys to user-friendly labels
             key_map = {
                 "age": "Age",
                 "bmi": "Height and weight (to calculate BMI internally - never ask for BMI directly)",
@@ -662,15 +711,19 @@ class PCOSAssistant:
                 formatted_history.append(("ai", msg["content"]))
 
         try:
-            chain = prompt | self.llm | StrOutputParser()
-            response = chain.invoke({
-                "chat_history": formatted_history,
-                "input": message,
-                "context": context,
-                "memory_context": memory_context,
-                "missing_features_context": missing_features_context,
-                "smart_memory_json": smart_memory_json
-            })
+            response = self._invoke_llm_resilient(
+                prompt,
+                {
+                    "chat_history": formatted_history,
+                    "input": message,
+                    "context": context,
+                    "memory_context": memory_context,
+                    "missing_features_context": missing_features_context,
+                    "smart_memory_json": smart_memory_json
+                },
+                temperature=0.3,
+                max_tokens=1024
+            )
             return self._sanitize_response(response, title_used_recently)
         except Exception as e:
             print(f"Error calling LLM in chat_with_context: {e}")
@@ -815,12 +868,12 @@ RULES:
             # Return defaults
             return self._get_default_features()
 
-    def generate_result_statement(self, final_verdict: str, extracted_features: dict, history=None):
+    def generate_result_statement(self, final_verdict: str, extracted_features: dict, history=None, lang: str = "en"):
         """
-        Generate a warm, empathetic, non-diagnostic result statement
+        Generate a clear, smart, structured, and caring non-diagnostic result statement
         based on the majority voting outcome and extracted features.
-        Uses llama-3.1-8b-instant for speed (~3-6s vs ~30-60s with 70b).
-        Produces aesthetic Markdown with tables for lifestyle suggestions.
+        Provides a prominent status header, objective findings, and an actionable lifestyle table.
+        Avoids confusing over-empathy, patronizing pet names, or ambiguous medical statements.
         """
         history_text = "No history available."
         if history:
@@ -830,29 +883,75 @@ RULES:
                 formatted_history.append(f"{role}: {msg['content']}")
             history_text = "\n".join(formatted_history[-10:])
 
-        system_prompt = """You are a caring, warm 'big sister' AI sharing pattern-matching results. Respond ONLY in Markdown.
+        is_suspected = "Suspected" in str(final_verdict) or "Chance" in str(final_verdict)
+
+        if lang == "bn":
+            status_banner = (
+                "🟠 **পর্যবেক্ষণ ফলাফল:** PCOS এর সাথে সামঞ্জস্যপূর্ণ কিছু লক্ষণ পরিলক্ষিত হয়েছে"
+                if is_suspected
+                else "🟢 **পর্যবেক্ষণ ফলাফল:** PCOS এর সাধারণ লক্ষণসমূহ পরিলক্ষিত হওয়ার সম্ভাবনা কম"
+            )
+            lang_rules = (
+                "Respond entirely in clean, clear, respectful Bengali (বাংলা). "
+                "In 'পরবর্তী করণীয়' (Recommended Next Steps), explicitly advise consulting a licensed gynecologist or endocrinologist for clinical confirmation, "
+                "AND guide the patient to explore HRITU's **🌿 লাইফস্টাইল (Lifestyle Advice)** module (উপরের মডিউল বারে) for personalized diet, exercise, and routine guidance."
+            )
+        else:
+            status_banner = (
+                "🟠 **Observation Status:** Noticeable PCOS-Associated Patterns Observed (Medical Checkup Advised)"
+                if is_suspected
+                else "🟢 **Observation Status:** Low Likelihood / Minimal PCOS-Associated Patterns Observed"
+            )
+            lang_rules = (
+                "Respond in clear, professional, respectful English. "
+                "In the 'Recommended Next Steps' section, advise consulting a licensed gynecologist or endocrinologist for clinical evaluation, "
+                "AND explicitly refer the user to HRITU's **🌿 Lifestyle Advice** module (in the top module bar) to explore tailored meal plans, workouts, and daily wellness habits."
+            )
+
+        system_prompt = f"""You are a professional, intelligent, and caring health awareness assistant providing a Pattern Observation Summary for a patient.
+
+Tone: Smart, clear, supportive, and objective.
+IMPORTANT: Do NOT use over-the-top emotional fluff or patronizing pet names (NEVER say "sweetie", "darling", "honey", "wonderfully", or "little sister"). Patients need clear, honest, and empowering facts they can understand at a glance.
+
+{lang_rules}
 
 RULES:
-1. NEVER diagnose. Use ONLY: "patterns observed", "observations suggest", "based on what you shared", "pattern-matching indicates".
-2. NEVER say "you have PCOS" or "you don't have PCOS" or "diagnosis" or "condition" or "disease" or "disorder".
-3. NEVER mention "Random Forest", "Decision Tree", models, algorithms, ML, or accuracy.
-4. Be warm, supportive, encouraging. Use 💛 or 🌸 sparingly.
-5. Always recommend visiting a gynecologist or endocrinologist.
+1. NEVER diagnose. Use ONLY phrasing like: "preliminary observation", "patterns observed", "based on your responses".
+2. NEVER state "you have PCOS" or "you are diagnosed with".
+3. NEVER mention internal ML models, algorithms, Random Forest, Decision Tree, or statistical voting.
+4. Keep the summary structured and easy to read.
 
-Internal result (DO NOT name the models): Verdict={final_verdict}
-User info: Age={age}, BMI={bmi}, Cycle={cycle}, Symptoms={symptoms}
+Internal Verdict: {final_verdict} (is_suspected={is_suspected})
+Patient Reported Info:
+- Age: {extracted_features.get('age', 'Not shared')}
+- BMI: {extracted_features.get('bmi', 'Not shared')}
+- Menstrual Cycle Pattern: {extracted_features.get('cycle_pattern', 'Not shared')}
+- Symptoms reported: {{symptoms}}
 
-Conversation history for context:
-{history_text}
+Conversation Context:
+{{history_text}}
 
-Produce this EXACT structure:
-1. A warm 2-3 sentence opening sharing the observation (what the patterns suggest), explicitly acknowledging the user's specific details like their age of {age} years and cycle pattern ({cycle}) in the opening sentences. Incorporate specific details discussed in the history.
-2. A "### 🌿 Lifestyle Suggestions" section with a Markdown table:
-   | Area | Suggestion | Why It Helps |
-   Include 3-4 rows. Ensure the suggestions table directly reflects any specific foods (like Lal Chal, Lal Shak, Pui Shak, Karola), exercise preferences, or other topics that were recommended or discussed in the conversation history.
-3. A gentle 1-sentence closing encouraging them to see a specialist 💛
+Produce this EXACT clean Markdown structure:
 
-Keep the ENTIRE response under 250 words."""
+{status_banner}
+
+### 📋 Summary of Observations
+Write 2-3 clear, objective sentences explaining why this observation was reached based on their reported cycle regularity, age, BMI, and physical symptoms. Directly state what was checked (cycle regularity, metabolic indicators, physical signs) in a straightforward, reassuring manner.
+
+### 🌿 Actionable Lifestyle & Routine Guidance
+Provide a clean Markdown table with exactly 3 focused, practical rows:
+| Focus Area | Actionable Recommendation | Health Benefit |
+Include:
+1. **Nutrition**: Low-GI whole foods, local lentils/vegetables, balanced protein.
+2. **Physical Activity**: Realistic movement (e.g. 30 mins brisk walking or home workouts).
+3. **Rest & Recovery**: Consistent 7-8 hours sleep schedule or stress balance.
+
+### 🩺 Recommended Next Steps
+Provide 2 clear, empowering sentences:
+1. Advise the patient that this is an educational pattern-matching observation (not a medical diagnosis) and encourage scheduling a routine consultation with a licensed gynecologist or endocrinologist for clinical confirmation if they experience cycle changes or persistent symptoms.
+2. Explicitly refer them to our **🌿 Lifestyle Advice** module in HRITU (available on the top module bar) to explore customized nutrition guidance, low-GI foods, home workout routines, and sleep hygiene practices tailored for hormonal balance.
+
+Keep the ENTIRE response concise, polished, and under 250 words."""
 
         symptoms = extracted_features.get("symptoms", [])
         if isinstance(symptoms, list):
@@ -862,19 +961,15 @@ Keep the ENTIRE response under 250 words."""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            ("human", "Generate the pattern summary now.")
+            ("human", "Generate the clear pattern summary now.")
         ])
 
-        # Use primary model for statement generation
-        fast_llm = self._create_llm(self.primary_model, temperature=0.7, max_tokens=512)
+        # Use primary model for statement generation with low temperature for objective clarity
+        fast_llm = self._create_llm(self.primary_model, temperature=0.25, max_tokens=512)
         chain = prompt | fast_llm | StrOutputParser()
 
         try:
             response = chain.invoke({
-                "final_verdict": final_verdict,
-                "age": extracted_features.get("age", "not shared"),
-                "bmi": extracted_features.get("bmi", "not shared"),
-                "cycle": extracted_features.get("cycle_pattern", "not shared"),
                 "symptoms": symptoms_str,
                 "history_text": history_text
             })
@@ -882,23 +977,20 @@ Keep the ENTIRE response under 250 words."""
         except Exception as e:
             print(f"Result generation error ({self.primary_model}): {e}. Attempting fallback to {self.fallback_model}...")
             try:
-                fallback_llm = self._create_llm(self.fallback_model, temperature=0.7, max_tokens=512)
+                fallback_llm = self._create_llm(self.fallback_model, temperature=0.25, max_tokens=512)
                 fallback_chain = prompt | fallback_llm | StrOutputParser()
                 response = fallback_chain.invoke({
-                    "final_verdict": final_verdict,
-                    "age": extracted_features.get("age", "not shared"),
-                    "bmi": extracted_features.get("bmi", "not shared"),
-                    "cycle": extracted_features.get("cycle_pattern", "not shared"),
                     "symptoms": symptoms_str,
                     "history_text": history_text
                 })
                 return self._sanitize_diagnostic_language(response)
             except Exception as fe:
                 print(f"Fallback result generation error: {fe}")
-                if "Suspected" in final_verdict or "Chance" in final_verdict:
-                    return self._fallback_result_message("Suspected", "Suspected")
-                else:
-                    return self._fallback_result_message("No", "No")
+                return self._fallback_result_message(
+                    "Suspected" if is_suspected else "No",
+                    "Suspected" if is_suspected else "No",
+                    lang=lang
+                )
 
     def generate_short_observation(self, extracted_features: dict, history=None):
         """
@@ -1163,34 +1255,53 @@ Produce:
         cleaned_text = re.sub(r'^\s*,\s*', '', cleaned_text)
         return cleaned_text.strip()
 
-    def _fallback_result_message(self, rf_label: str, dt_label: str):
-        """Fallback result message if LLM fails. Uses safe, non-diagnostic language."""
-        if rf_label in ("Yes", "Suspected") or dt_label in ("Yes", "Suspected"):
+    def _fallback_result_message(self, rf_label: str, dt_label: str, lang: str = "en"):
+        """Fallback result message if LLM fails. Clear, professional, and non-diagnostic."""
+        is_suspected = rf_label in ("Yes", "Suspected") or dt_label in ("Yes", "Suspected")
+        if lang == "bn":
+            status = "🟠 **পর্যবেক্ষণ ফলাফল:** PCOS এর সাথে সামঞ্জস্যপূর্ণ কিছু লক্ষণ পরিলক্ষিত হয়েছে" if is_suspected else "🟢 **পর্যবেক্ষণ ফলাফল:** PCOS এর সাধারণ লক্ষণসমূহ পরিলক্ষিত হওয়ার সম্ভাবনা কম"
+            summary = (
+                "আপনার প্রদত্ত তথ্যের ভিত্তিতে কিছু লক্ষণ (যেমন অনিয়মিত মাসিক বা শারীরিক পরিবর্তন) PCOS-সম্পর্কিত সাধারণ প্যাটার্নের সাথে সামঞ্জস্য প্রদর্শন করে। এটি কোনো রোগ নির্ণয় নয়, তবে বিশেষজ্ঞ চিকিৎসকের পরামর্শ নেওয়া সমীচীন।"
+                if is_suspected
+                else "আপনার প্রদত্ত তথ্য অনুসারে (যেমন নিয়মিত মাসিক চক্র ও সাধারণ স্বাস্থ্য সূচক) PCOS-এর সাধারণ লক্ষণসমূহ উপস্থিত থাকার সম্ভাবনা কম পরিলক্ষিত হয়েছে।"
+            )
             return (
-                "Based on what you've shared with me, some of the **patterns observed** in your symptoms "
-                "show similarities with what's commonly associated with PCOS-related characteristics. "
-                "But please remember — this is just pattern matching, not a medical evaluation at all! 💕\n\n"
-                "### 🌿 Lifestyle Suggestions\n\n"
-                "| Area | Suggestion | Why It Helps |\n"
-                "|------|-----------|-------------|\n"
-                "| 🥗 Diet | Focus on whole grains and leafy greens | Helps stabilize blood sugar and insulin |\n"
-                "| 🚶‍♀️ Movement | 30 min of gentle walking daily | Supports hormonal balance and mood |\n"
-                "| 😴 Sleep | Aim for 7-8 hours of consistent sleep | Critical for hormone regulation |\n\n"
-                "I'd really encourage you to visit a gynecologist or endocrinologist for proper evaluation — "
-                "they'll know exactly what's best for you! 💛"
+                f"{status}\n\n"
+                f"### 📋 পর্যবেক্ষণের সংক্ষিপ্ত বিবরণ\n{summary}\n\n"
+                f"### 🌿 জীবনযাত্রা ও স্বাস্থ্য পরামর্শ\n\n"
+                f"| ক্ষেত্র | বাস্তবসম্মত পদক্ষেপ | স্বাস্থ্য উপকারিতা |\n"
+                f"| :--- | :--- | :--- |\n"
+                f"| **পুষ্টি** | লাল চাল, শাকসবজি ও পর্যাপ্ত প্রোটিন গ্রহণ করুন | রক্তে শর্করার মাত্রা ও ইনসুলিন নিয়ন্ত্রণে সহায়ক |\n"
+                f"| **শারীরিক সক্রিয়তা** | প্রতিদিন অন্তত ৩০ মিনিট হাঁটা বা হালকা ব্যায়াম করুন | স্বাভাবিক হরমোন ও মেটাবলিক ভারসাম্য বজায় রাখে |\n"
+                f"| **ঘুম ও বিশ্রাম** | প্রতিদিন ৭-৮ ঘণ্টা নিয়মিত ও পর্যাপ্ত ঘুম নিশ্চিত করুন | মানসিক চাপ কমাতে ও হরমোন পুনর্গঠনে কার্যকর |\n\n"
+                f"### 🩺 পরবর্তী করণীয়\n"
+                f"১. **চিকিৎসকের পরামর্শ:** মনে রাখবেন, এটি সচেতনতামূলক প্রাথমিক পর্যবেক্ষণ, কোনো চূড়ান্ত রোগ নির্ণয় নয়। যেকোনো শারীরিক পরিবর্তন বা দীর্ঘস্থায়ী অস্বস্তির ক্ষেত্রে অবশ্যই একজন অভিজ্ঞ গাইনিকোলজিস্ট বা এন্ডোক্রাইনোলজিস্টের পরামর্শ নিন।\n"
+                f"২. **লাইফস্টাইল গাইডেন্স:** আপনার প্রতিদিনের উপযোগী সুষম খাবার তালিকা, লো-জিআই পুষ্টি ও শরীরচর্চার নির্দেশিকা পেতে ওপরের **🌿 লাইফস্টাইল (Lifestyle Advice)** মডিউলটি অন্বেষণ করুন।"
             )
         else:
+            status = (
+                "🟠 **Observation Status:** Noticeable PCOS-Associated Patterns Observed (Medical Checkup Advised)"
+                if is_suspected
+                else "🟢 **Observation Status:** Low Likelihood / Minimal PCOS-Associated Patterns Observed"
+            )
+            summary = (
+                "Based on your reported symptoms (such as cycle irregularities or physical indicators), your responses align with patterns commonly observed in PCOS. This suggests an area to explore with a doctor."
+                if is_suspected
+                else "Based on your reported details (such as cycle regularity and overall baseline health indicators), your responses do not currently indicate typical PCOS-related patterns."
+            )
             return (
-                "Based on our chat, the **patterns observed** don't strongly align with what's "
-                "typically associated with PCOS — and that's a positive sign! ✨\n\n"
-                "### 🌿 Lifestyle Suggestions\n\n"
-                "| Area | Suggestion | Why It Helps |\n"
-                "|------|-----------|-------------|\n"
-                "| 🥗 Diet | Maintain a balanced, nutrient-rich diet | Supports overall hormonal health |\n"
-                "| 💧 Hydration | Drink 8+ glasses of water daily | Helps with energy and skin health |\n"
-                "| 🧘 Stress | Try 10 min of daily mindfulness | Keeps cortisol levels in check |\n\n"
-                "If you ever have concerns, please don't hesitate to see a gynecologist — "
-                "they can provide proper evaluation and peace of mind! 🌸"
+                f"{status}\n\n"
+                f"### 📋 Summary of Observations\n{summary}\n\n"
+                f"### 🌿 Actionable Lifestyle & Routine Guidance\n\n"
+                f"| Focus Area | Actionable Recommendation | Health Benefit |\n"
+                f"| :--- | :--- | :--- |\n"
+                f"| **Nutrition** | Focus on low-GI complex carbs, lentils, and leafy greens | Helps sustain balanced insulin and blood glucose levels |\n"
+                f"| **Movement** | Aim for 30 minutes of daily moderate activity (e.g. brisk walking) | Supports metabolic health and cardiovascular wellness |\n"
+                f"| **Rest & Routine** | Target 7–8 hours of consistent nightly sleep | Crucial for cortisol regulation and hormonal recovery |\n\n"
+                f"### 🩺 Recommended Next Steps\n"
+                f"Please remember that this is an educational pattern-matching observation and **not a medical diagnosis**. We recommend:\n"
+                f"1. **Clinical Consultation:** Consult a licensed gynecologist or endocrinologist for clinical confirmation and diagnostic evaluation if you experience cycle irregularities or persistent symptoms.\n"
+                f"2. **Explore Lifestyle Advice:** Tap on our **🌿 Lifestyle Advice** module in the menu bar to explore personalized nutrition strategies, low-GI meal ideas, physical movement, and routine habits specifically designed for hormonal wellness."
             )
 
     def _get_default_features(self):

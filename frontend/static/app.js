@@ -71,6 +71,7 @@ const skipFeedbackBtn = document.getElementById('skip-feedback-btn');
 const thankyouModal = document.getElementById('thankyou-modal');
 const thankyouCloseBtn = document.getElementById('thankyou-close-btn');
 
+// ── State ─────────────────────────────────────────────────────────────────
 let history = [];
 let sessionId = crypto.randomUUID ? crypto.randomUUID() : _generateUUID();
 let selectedRating = 0;
@@ -82,6 +83,7 @@ let currentLanguage = 'en'; // 'en' | 'bn'
 let currentMode = null;     // null | 'prediction' | 'talk' | 'lifestyle' | 'learn'
 let currentScreeningState = null;
 let currentLearnState = null;
+let latestPatternReportHTML = '';
 
 const translations = {
     en: {
@@ -162,7 +164,7 @@ function _generateUUID() {
     });
 }
 
-// Voice Synthesis (Text-to-Speech)
+// ── Voice Synthesis (Text-to-Speech) — Default OFF ────────────────────────
 let isVoiceEnabled = sessionStorage.getItem('isVoiceEnabled') === 'true';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -180,6 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
     };
     if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+
+    // Voice Read-Aloud Toggle
     if (voiceToggle) {
         voiceToggle.checked = isVoiceEnabled;
         voiceToggle.addEventListener('change', (e) => {
@@ -192,14 +196,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Centralized Header Language Toggle
     if (langToggleBtn) langToggleBtn.addEventListener('click', toggleLanguage);
 
+    // Header ↻ New Chat Button
     if (headerNewChatBtn) {
         headerNewChatBtn.addEventListener('click', () => {
             resetAndStartNewChat();
         });
     }
 
+    // Module Card Action Buttons
     [
         { btn: m1Btn, mode: 'prediction' },
         { btn: m3Btn, mode: 'talk' },
@@ -218,6 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function toggleLanguage() {
     currentLanguage = currentLanguage === 'en' ? 'bn' : 'en';
     updateLanguageUI();
+    // If only welcome greeting is shown, update it to current language
     if (history.length <= 1) {
         showInitialWelcome();
     }
@@ -261,6 +270,7 @@ function updateLanguageUI() {
     if (earlyEndAnyway) earlyEndAnyway.textContent = t.earlyEnd;
 }
 
+// ── Welcome & Module Selection ──────────────────────────────────────────────
 function showInitialWelcome() {
     chatMessages.innerHTML = '';
     history = [];
@@ -280,8 +290,12 @@ function resetAndStartNewChat() {
     chatEnded = false;
     userMessageCount = 0;
     isProcessing = false;
+    latestPatternReportHTML = '';
 
+    // Reset module button highlighting
     moduleButtons.forEach(btn => btn.classList.remove('active'));
+
+    // Enable input elements
     chatInputArea.classList.remove('disabled');
     messageInput.disabled = false;
     if (micBtn) micBtn.disabled = false;
@@ -296,6 +310,7 @@ function resetAndStartNewChat() {
 function selectModuleAndStartChat(mode) {
     currentMode = mode;
 
+    // Update active highlight on module buttons
     moduleButtons.forEach(btn => {
         if (btn && btn.getAttribute('data-mode') === mode) {
             btn.classList.add('active');
@@ -322,7 +337,7 @@ function selectModuleAndStartChat(mode) {
     messageInput.focus();
 }
 
-// Voice Output (TTS)- Empathetic, Strictly Female Voice Engine
+// ── Voice Output (TTS) — Empathetic, Strictly Female Voice Engine ────────────
 let cachedVoices = [];
 
 function loadVoices() {
@@ -562,9 +577,14 @@ function appendMessage(content, sender, isCrisis = false, chips = []) {
     if (sender === 'ai' && typeof marked !== 'undefined') {
         div.innerHTML = marked.parse(content);
 
-        // Add inline PDF download button for any Markdown tables in AI response
+        // Check if full report download chip is provided with this message
+        const hasFullReportChip = Array.isArray(chips) && chips.some(c =>
+            c.includes('Download') || c.includes('ডাউনলোড') || c.includes('PDF')
+        );
+
+        // Add inline PDF download button for individual Markdown tables only if full report download chip is not present
         const tables = div.querySelectorAll('table');
-        if (tables.length > 0) {
+        if (tables.length > 0 && !hasFullReportChip) {
             tables.forEach((table) => {
                 const btnWrapper = document.createElement('div');
                 btnWrapper.className = 'table-pdf-btn-wrapper';
@@ -600,26 +620,68 @@ function appendMessage(content, sender, isCrisis = false, chips = []) {
             btn.className = 'message-chip';
             btn.textContent = chipText;
 
-            // Highlight Stop & View Report chip subtly
-            if (chipText === 'Stop & View Report' || chipText === 'থামো ও রিপোর্ট দেখুন') {
+            // Differentiate action chips
+            const isDownloadChip = chipText.includes('Download') || chipText.includes('ডাউনলোড') || chipText.includes('PDF');
+            const isLifestyleChip = chipText.includes('Lifestyle') || chipText.includes('লাইফস্টাইল');
+            const isNewChatChip = chipText.includes('New Chat') || chipText.includes('নতুন চ্যাট');
+            const isFeedbackChip = chipText.includes('Feedback') || chipText.includes('মতামত');
+            const isStopReportChip = chipText === 'Stop & View Report' || chipText === 'থামো ও রিপোর্ট দেখুন';
+
+            if (isDownloadChip) {
+                btn.classList.add('report-download-chip');
+            } else if (isLifestyleChip) {
+                btn.classList.add('lifestyle-trigger-chip');
+            } else if (isNewChatChip) {
+                btn.classList.add('new-chat-chip');
+            } else if (isFeedbackChip) {
+                btn.classList.add('feedback-trigger-chip');
+            } else if (isStopReportChip) {
                 btn.classList.add('report-trigger-chip');
             }
 
             btn.addEventListener('click', () => {
+                // Action chips that remain interactive even after chat has ended
+                if (isDownloadChip) {
+                    btn.classList.add('loading');
+                    const origText = btn.textContent;
+                    btn.textContent = currentLanguage === 'bn' ? '⏳ প্রস্তুত হচ্ছে...' : '⏳ Generating PDF...';
+                    generateAndDownloadReportPDF();
+                    setTimeout(() => {
+                        btn.classList.remove('loading');
+                        btn.textContent = origText;
+                    }, 2200);
+                    return;
+                }
+
+                if (isLifestyleChip) {
+                    selectModuleAndStartChat('lifestyle');
+                    return;
+                }
+
+                if (isNewChatChip) {
+                    resetAndStartNewChat();
+                    return;
+                }
+
+                if (isFeedbackChip) {
+                    if (feedbackModal) feedbackModal.style.display = 'block';
+                    return;
+                }
+
                 if (isProcessing || chatEnded) return;
 
-                // Dim and disable all chips in this container to prevent duplicate taps
+                // If Stop & View Report chip is clicked, trigger completeness and report flow WITHOUT locking chips
+                if (isStopReportChip) {
+                    handleStopOrEndChat();
+                    return;
+                }
+
+                // Dim and disable all chips in this container to prevent duplicate taps on submission
                 chipsWrapper.querySelectorAll('.message-chip').forEach(c => {
                     c.classList.add('disabled');
                     c.disabled = true;
                 });
                 btn.classList.add('selected');
-
-                // If Stop & View Report chip is clicked, trigger completeness and report flow
-                if (chipText === 'Stop & View Report' || chipText === 'থামো ও রিপোর্ট দেখুন') {
-                    handleStopOrEndChat();
-                    return;
-                }
 
                 messageInput.value = chipText;
                 sendMessage();
@@ -786,7 +848,6 @@ async function sendMessage() {
         // Extract inline selection chips (crisis alerts have no chips)
         const chips = (data.chips && data.chips.length > 0) ? data.chips : (isCrisis ? [] : chipsFor(data.response));
         appendMessage(data.response, 'ai', isCrisis, chips);
-        speakText(data.response);
 
         // If screening finished in Module 1:
         if (data.is_screening_complete) {
@@ -796,10 +857,11 @@ async function sendMessage() {
             if (micBtn) { micBtn.disabled = true; stopRecording(); }
 
             if (data.pattern) {
-                patternText.innerHTML = marked.parse(data.pattern);
+                latestPatternReportHTML = typeof marked !== 'undefined' ? marked.parse(data.pattern) : data.pattern;
+                if (patternText) patternText.innerHTML = latestPatternReportHTML;
             }
             if (data.suggestion) {
-                suggestionText.textContent = data.suggestion;
+                if (suggestionText) suggestionText.textContent = data.suggestion;
             }
             if (rfBadge && data.rf_prediction) {
                 rfBadge.textContent = `Random Forest: ${data.rf_prediction}`;
@@ -824,12 +886,13 @@ async function sendMessage() {
                 explainabilityContent.innerHTML = expHtml;
             }
 
-            // Auto-display Result Modal after brief pause
-            setTimeout(() => {
-                resultModal.style.display = 'block';
-                resultLoading.style.display = 'none';
-                resultContent.style.display = 'block';
-            }, 2500);
+            // Concise closing audio announcement without reading tabular markup
+            const speechNotice = currentLanguage === 'bn'
+                ? "ধন্যবাদ! আপনার সকল উত্তরের ভিত্তিতে স্বাস্থ্য প্যাটার্ন পর্যবেক্ষণ সম্পন্ন হয়েছে। বিস্তারিত ফলাফল নিচে চ্যাটে দেখুন।"
+                : "Thank you! Based on your responses, your health pattern observation summary is ready below in the chat.";
+            speakText(speechNotice);
+        } else {
+            speakText(data.response);
         }
     } catch (err) {
         hideTyping();
@@ -999,7 +1062,7 @@ async function handleStopOrEndChat() {
     if (chatEnded) return;
     if (isRecording) stopRecording();
 
-    // Modules 2, 3, 4: Friendly closing message and feedback modal
+    // Modules 2, 3, 4: Friendly closing message directly in chat without pop-up modal
     if (currentMode !== 'prediction') {
         chatEnded = true;
         chatInputArea.classList.add('disabled');
@@ -1010,12 +1073,12 @@ async function handleStopOrEndChat() {
             ? "আজকের মতো চ্যাট সম্পন্ন করার জন্য ধন্যবাদ! ভালো থেকো এবং নিজের স্বাস্থ্যের যত্ন নিও। 🌸"
             : "Thank you for chatting with me today! Stay healthy and take good care of yourself. 🌸";
 
-        appendMessage(closingMsg, 'ai');
+        const chips = [
+            currentLanguage === 'bn' ? '⭐ মতামত দিন' : '⭐ Feedback',
+            currentLanguage === 'bn' ? '↻ নতুন চ্যাট' : '↻ Start New Chat'
+        ];
+        appendMessage(closingMsg, 'ai', false, chips);
         speakText(closingMsg);
-
-        setTimeout(() => {
-            feedbackModal.style.display = 'block';
-        }, 800);
         return;
     }
 
@@ -1055,8 +1118,17 @@ async function handleStopOrEndChat() {
     }
 }
 
+function reenableActiveChips() {
+    const chipButtons = chatMessages.querySelectorAll('.message-chips-container .message-chip');
+    chipButtons.forEach(c => {
+        c.classList.remove('disabled', 'selected');
+        c.disabled = false;
+    });
+}
+
 earlyKeepChatting.addEventListener('click', () => {
     earlyExitModal.style.display = 'none';
+    reenableActiveChips();
     messageInput.focus();
 });
 
@@ -1067,6 +1139,7 @@ earlyEndAnyway.addEventListener('click', () => {
 
 confirmNo.addEventListener('click', () => {
     confirmModal.style.display = 'none';
+    reenableActiveChips();
     messageInput.focus();
 });
 
@@ -1104,69 +1177,53 @@ async function executeEndChat() {
         if (data.session_id) sessionId = data.session_id;
 
         if (data.insufficient_data) {
-            resultModal.style.display = 'none';
             const insufficientMsg = currentLanguage === 'bn'
-                ? "প্রয়োজনীয় তথ্যের ঘাটতি থাকায় প্রেডিকশন সম্পন্ন করা সম্ভব হয়নি। প্রেডিকশন মডেলের জন্য অন্তত ১০টি মূল স্বাস্থ্য সংক্রান্ত তথ্য প্রদান করা আবশ্যক।"
-                : "Prediction cancelled due to insufficient health details. At least 10 mandatory features are required to run the prediction models.";
-            appendMessage(insufficientMsg, 'ai');
+                ? "প্রয়োজনীয় তথ্যের ঘাটতি থাকায় প্যাটার্ন পর্যবেক্ষণ সম্পন্ন করা সম্ভব হয়নি। নির্ভুল পর্যবেক্ষণের জন্য অন্তত ১০টি মূল স্বাস্থ্য সংক্রান্ত তথ্য প্রদান করা আবশ্যক।\n\nআপনি চাইলে নিচের বাটন থেকে নতুন করে চ্যাট শুরু করতে পারেন।"
+                : "Pattern observation could not be completed due to insufficient health details. At least 10 mandatory core health features are required to run the predictive models.\n\nYou can start a new chat below whenever you are ready, or share your feedback.";
+            
+            const chips = [
+                currentLanguage === 'bn' ? '⭐ মতামত দিন' : '⭐ Feedback',
+                currentLanguage === 'bn' ? '↻ নতুন চ্যাট' : '↻ Start New Chat'
+            ];
+            appendMessage(insufficientMsg, 'ai', false, chips);
             speakText(insufficientMsg);
-            setTimeout(() => {
-                feedbackModal.style.display = 'block';
-            }, 800);
             return;
         }
 
-        resultModal.style.display = 'block';
-        resultLoading.style.display = 'none';
-        resultContent.style.display = 'block';
-
-        if (typeof marked !== 'undefined') {
-            patternText.innerHTML = marked.parse(data.pattern);
-            suggestionText.innerHTML = marked.parse(data.suggestion);
-        } else {
-            patternText.textContent = data.pattern;
-            suggestionText.textContent = data.suggestion;
-        }
-
-        // Render SHAP & LIME Explainability Factors
-        if (data.explainability && data.explainability.shap_factors) {
-            explainabilitySection.style.display = 'block';
-            let expHtml = '';
-            data.explainability.shap_factors.forEach(item => {
-                const isPos = item.direction === 'positive';
-                const badgeClass = isPos ? 'pos' : 'neg';
-                const badgeText = isPos ? 'Key Indicator' : 'Balanced Factor';
-                expHtml += `
-                    <div class="explain-item">
-                        <span><strong>${item.feature}</strong></span>
-                        <span class="explain-badge ${badgeClass}">${badgeText}</span>
-                    </div>
-                `;
-            });
-            explainabilityContent.innerHTML = expHtml;
-        } else {
-            explainabilitySection.style.display = 'none';
-        }
+        latestPatternReportHTML = typeof marked !== 'undefined' ? marked.parse(data.pattern) : data.pattern;
+        if (patternText) patternText.innerHTML = latestPatternReportHTML;
+        if (suggestionText) suggestionText.textContent = data.suggestion || '';
 
         if (data.rf_prediction && data.dt_prediction) {
-            rfBadge.textContent = `RF: ${data.rf_prediction}`;
-            dtBadge.textContent = `DT: ${data.dt_prediction}`;
-            predictionBadges.style.display = 'flex';
+            if (rfBadge) rfBadge.textContent = `RF: ${data.rf_prediction}`;
+            if (dtBadge) dtBadge.textContent = `DT: ${data.dt_prediction}`;
         }
 
+        // Action chips provided directly in the chat below the pattern observation summary
+        const chips = (data.chips && data.chips.length > 0) ? data.chips : [
+            currentLanguage === 'bn' ? '📥 রিপোর্ট ডাউনলোড (PDF)' : '📥 Download Report (PDF)',
+            currentLanguage === 'bn' ? '⭐ মতামত দিন' : '⭐ Feedback',
+            currentLanguage === 'bn' ? '↻ নতুন চ্যাট' : '↻ Start New Chat'
+        ];
+
+        appendMessage(data.pattern, 'ai', false, chips);
+
+        const speechNotice = currentLanguage === 'bn'
+            ? "আপনার স্বাস্থ্য তথ্যের ভিত্তিতে প্যাটার্ন পর্যবেক্ষণ সম্পন্ন হয়েছে। বিস্তারিত ফলাফল নিচে চ্যাটে দেখুন।"
+            : "Your health pattern observation summary has been generated and is displayed below.";
+        speakText(speechNotice);
+
     } catch (err) {
-        resultLoading.style.display = 'none';
-        resultContent.style.display = 'block';
-        patternText.textContent = "Error performing pattern analysis. Please try again.";
-        suggestionText.textContent = "";
+        console.error('executeEndChat error:', err);
+        const errMsg = currentLanguage === 'bn'
+            ? "প্যাটার্ন পর্যবেক্ষণ তৈরি করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+            : "Error performing pattern analysis. Please try again.";
+        appendMessage(errMsg, 'ai');
     }
 }
 
 resultCloseBtn.addEventListener('click', () => {
     resultModal.style.display = 'none';
-    setTimeout(() => {
-        feedbackModal.style.display = 'block';
-    }, 400);
 });
 
 // ── Star Rating & Feedback ──────────────────────────────────────────────────
@@ -1244,47 +1301,95 @@ thankyouCloseBtn.addEventListener('click', () => {
     resetAndStartNewChat();
 });
 
-// ── Download Report ───────────────────────────────────────────────────────
-downloadBtn.addEventListener('click', () => {
+// ── Standalone PDF Report Generation ───────────────────────────────────────
+function generateAndDownloadReportPDF() {
     const report = document.createElement('div');
     report.style.fontFamily = "'Outfit', sans-serif";
-    report.style.padding = '20px';
+    report.style.padding = '24px';
     report.style.color = '#301a3e';
+    report.style.backgroundColor = '#ffffff';
+
+    const hasSuggestion = suggestionText && suggestionText.textContent && suggestionText.textContent.trim().length > 0;
+    const reportBodyHTML = latestPatternReportHTML || (patternText ? patternText.innerHTML : '');
+
+    if (!reportBodyHTML || reportBodyHTML.trim().length === 0) {
+        console.warn('No pattern report content available to download as PDF.');
+        return;
+    }
 
     report.innerHTML = `
-        <div style="text-align:center; margin-bottom:24px;">
-            <h1 style="color:#6e4389; font-size:20px;">${currentLanguage === 'bn' ? 'ঋতু — PCOS প্যাটার্ন পর্যবেক্ষণ' : 'HRITU — PCOS Pattern Summary'}</h1>
-            <p style="font-size:11px; color:#8a5ca8;">Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        <div style="text-align:center; margin-bottom:20px; border-bottom: 2px solid #ede3f6; padding-bottom: 14px;">
+            <h1 style="color:#6e4389; font-size:22px; margin:0 0 6px 0;">${currentLanguage === 'bn' ? 'ঋতু — PCOS প্যাটার্ন পর্যবেক্ষণ সারাংশ' : 'HRITU — PCOS Pattern Summary'}</h1>
+            <p style="font-size:12px; color:#8a5ca8; margin:0;">Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
-        <div style="background:#f9f6fc; padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid #ede3f6;">
-            <h3 style="color:#6e4389; margin-bottom:8px;">${currentLanguage === 'bn' ? 'পর্যবেক্ষণ' : 'Pattern Observation'}</h3>
-            <p style="font-size:13px; line-height:1.6;">${patternText.textContent}</p>
+        <div class="report-body" style="background:#fdfbfe; padding:18px 20px; border-radius:12px; margin-bottom:16px; border:1px solid #ede3f6; font-size:13px; line-height:1.6;">
+            ${reportBodyHTML}
         </div>
-        <div style="background:#ede3f6; padding:14px; border-radius:12px; margin-bottom:16px;">
-            <p style="font-size:12px; font-style:italic; line-height:1.5;">${suggestionText.textContent}</p>
-        </div>
-        <div style="text-align:center; margin-top:20px; padding-top:16px; border-top:1px solid #ede3f6;">
-            <p style="font-size:11px; color:#6b557a;">
+        ${hasSuggestion ? `
+        <div style="background:#f7f2fc; padding:12px 16px; border-radius:10px; margin-bottom:16px; border-left:4px solid #8a5ca8;">
+            <p style="font-size:12px; line-height:1.5; margin:0; color:#4a2b63;">${suggestionText.textContent}</p>
+        </div>` : ''}
+        <div style="text-align:center; margin-top:20px; padding-top:14px; border-top:1px solid #ede3f6;">
+            <p style="font-size:11px; color:#6b557a; line-height:1.5; margin:0;">
                 <strong>Disclaimer:</strong> This report is NOT a medical diagnosis.<br>
-                It is a pattern-matching observation for awareness purposes only.<br>
-                Please consult a gynecologist or endocrinologist for proper evaluation.<br><br>
+                It is an algorithmic pattern-matching observation for health awareness purposes only.<br>
+                Please consult a licensed gynecologist or endocrinologist for clinical evaluation and confirmation.<br><br>
                 © 2026 - HRITU TN. | Health Assistant
             </p>
         </div>
     `;
 
-    html2pdf().from(report).set({
-        margin: 0.8,
-        filename: 'PCOS_Pattern_Summary.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-    }).save();
-});
+    // Apply inline styling to tables for perfect PDF generation
+    const tables = report.querySelectorAll('table');
+    tables.forEach(table => {
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.margin = '14px 0';
+        table.style.fontSize = '12px';
+        const ths = table.querySelectorAll('th');
+        ths.forEach(th => {
+            th.style.backgroundColor = '#f2ebf9';
+            th.style.color = '#5a3077';
+            th.style.border = '1px solid #ded0ee';
+            th.style.padding = '8px 10px';
+            th.style.textAlign = 'left';
+            th.style.fontWeight = '600';
+        });
+        const tds = table.querySelectorAll('td');
+        tds.forEach(td => {
+            td.style.border = '1px solid #ede3f6';
+            td.style.padding = '8px 10px';
+            td.style.color = '#301a3e';
+            td.style.verticalAlign = 'top';
+        });
+    });
+
+    if (typeof html2pdf !== 'undefined') {
+        html2pdf().from(report).set({
+            margin: [0.5, 0.5, 0.5, 0.5],
+            filename: 'HRITU_PCOS_Pattern_Summary.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+        }).save();
+    }
+}
+
+if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+        generateAndDownloadReportPDF();
+    });
+}
 
 window.onclick = function (event) {
-    if (event.target === confirmModal) confirmModal.style.display = 'none';
-    if (event.target === earlyExitModal) earlyExitModal.style.display = 'none';
+    if (event.target === confirmModal) {
+        confirmModal.style.display = 'none';
+        reenableActiveChips();
+    }
+    if (event.target === earlyExitModal) {
+        earlyExitModal.style.display = 'none';
+        reenableActiveChips();
+    }
 };
 
 newChatBtn.addEventListener('click', () => {

@@ -1,4 +1,7 @@
-"""Features:
+"""
+screening.py — Conversational Slot-Filling Screening Wizard for HRITU.
+
+Features:
   • 18 Core questions (Age, Height, Weight -> BMI, Cycle, Symptoms, Family, Lifestyle, Stress)
   • No countdown numbers in chat messages (clean, warm, elder-sisterly)
   • Milestone prompt after Question 18:
@@ -61,6 +64,9 @@ def parse_height(text: str) -> Optional[float]:
         if 120 <= num <= 220:
             return round(num)
     return None
+
+
+# ── Core 18 Questions ────────────────────────────────────────────────────────
 CORE_QUESTIONS = [
     {
         "key": "age", "kind": "number", "min": 10, "max": 65,
@@ -95,8 +101,8 @@ CORE_QUESTIONS = [
     {
         "key": "cycle_pattern", "kind": "choice",
         "values": ["Regular", "Irregular", "Absent"],
-        "en": "Are your periods usually:\n1) Regular  2) Irregular  3) Stopped / Absent",
-        "bn": "তোমার মাসিক সাধারণত:\n১) নিয়মিত  ২) অনিয়মিত  ৩) বন্ধ",
+        "en": "Are your periods usually:\n1) Regular\n2) Irregular\n3) Stopped / Absent",
+        "bn": "তোমার মাসিক সাধারণত:\n১) নিয়মিত\n২) অনিয়মিত\n৩) বন্ধ",
         "labels_en": ["Regular", "Irregular", "Stopped/Absent"],
         "labels_bn": ["নিয়মিত", "অনিয়মিত", "বন্ধ"],
         "name_en": "Cycle regularity", "name_bn": "মাসিক চক্র", "unit": ""
@@ -104,8 +110,8 @@ CORE_QUESTIONS = [
     {
         "key": "gap_between_periods", "kind": "choice",
         "values": ["1 month", "2 months", "3 months or more"],
-        "en": "Usual gap between your periods:\n1) About 1 month  2) About 2 months  3) 3 months or more",
-        "bn": "দুই মাসিকের মাঝে সাধারণত ব্যবধান কত:\n১) প্রায় ১ মাস  ২) প্রায় ২ মাস  ৩) ৩ মাস বা বেশি",
+        "en": "Usual gap between your periods:\n1) About 1 month\n2) About 2 months\n3) 3 months or more",
+        "bn": "দুই মাসিকের মাঝে সাধারণত ব্যবধান কত:\n১) প্রায় ১ মাস\n২) প্রায় ২ মাস\n৩) ৩ মাস বা বেশি",
         "labels_en": ["~1 month", "~2 months", "3+ months"],
         "labels_bn": ["~১ মাস", "~২ মাস", "৩+ মাস"],
         "name_en": "Period delay gap", "name_bn": "মাসিকের ব্যবধান", "unit": ""
@@ -113,8 +119,8 @@ CORE_QUESTIONS = [
     {
         "key": "acne_severity", "kind": "choice",
         "values": ["None", "Mild", "Moderate", "Severe"],
-        "en": "Acne severity on face or body:\n1) None  2) Mild  3) Moderate  4) Severe",
-        "bn": "মুখ বা শরীরে ব্রণের মাত্রা:\n১) নেই  ২) হালকা  ৩) মাঝারি  ৪) বেশি",
+        "en": "Acne severity on face or body:\n1) None\n2) Mild\n3) Moderate\n4) Severe",
+        "bn": "মুখ বা শরীরে ব্রণের মাত্রা:\n১) নেই\n২) হালকা\n৩) মাঝারি\n৪) বেশি",
         "labels_en": ["None", "Mild", "Moderate", "Severe"],
         "labels_bn": ["নেই", "হালকা", "মাঝারি", "বেশি"],
         "name_en": "Acne severity", "name_bn": "ব্রণ", "unit": ""
@@ -122,8 +128,8 @@ CORE_QUESTIONS = [
     {
         "key": "hair_loss", "kind": "choice",
         "values": ["None", "Mild", "Moderate", "Severe"],
-        "en": "Hair thinning or scalp hair loss:\n1) None  2) Mild  3) Moderate  4) Severe",
-        "bn": "মাথার চুল পড়া বা চুল পাতলা হয়ে যাওয়া:\n১) নেই  ২) হালকা  ৩) মাঝারি  ৪) বেশি",
+        "en": "Hair thinning or scalp hair loss:\n1) None\n2) Mild\n3) Moderate\n4) Severe",
+        "bn": "মাথার চুল পড়া বা চুল পাতলা হয়ে যাওয়া:\n১) নেই\n২) হালকা\n৩) মাঝারি\n৪) বেশি",
         "labels_en": ["None", "Mild", "Moderate", "Severe"],
         "labels_bn": ["নেই", "হালকা", "মাঝারি", "বেশি"],
         "name_en": "Hair loss", "name_bn": "চুল পড়া", "unit": ""
@@ -167,8 +173,8 @@ CORE_QUESTIONS = [
     {
         "key": "sleep_hours", "kind": "choice",
         "values": ["<5 hours", "5-6 hours", "7-8 hours", ">8 hours"],
-        "en": "Average sleep per night:\n1) Less than 5 hours  2) 5-6 hours  3) 7-8 hours  4) More than 8 hours",
-        "bn": "রাতে গড়ে কত সময় ঘুমাও:\n১) ৫ ঘণ্টার কম  ২) ৫-৬ ঘণ্টা  ৩) ৭-৮ ঘণ্টা  ৪) ৮ ঘণ্টার বেশি",
+        "en": "Average sleep per night:\n1) Less than 5 hours\n2) 5-6 hours\n3) 7-8 hours\n4) More than 8 hours",
+        "bn": "রাতে গড়ে কত সময় ঘুমাও:\n১) ৫ ঘণ্টার কম\n২) ৫-৬ ঘণ্টা\n৩) ৭-৮ ঘণ্টা\n৪) ৮ ঘণ্টার বেশি",
         "labels_en": ["<5 hours", "5-6 hours", "7-8 hours", ">8 hours"],
         "labels_bn": ["<৫ ঘণ্টা", "৫-৬ ঘণ্টা", "৭-৮ ঘণ্টা", ">৮ ঘণ্টা"],
         "name_en": "Sleep duration", "name_bn": "ঘুমের সময়", "unit": ""
@@ -176,8 +182,8 @@ CORE_QUESTIONS = [
     {
         "key": "activity_level", "kind": "choice",
         "values": ["Sedentary", "Light", "Moderate (2-4 days per week)", "High (5+ days per week)"],
-        "en": "Daily physical activity level:\n1) Sedentary (very little)  2) Light  3) Moderate (2-4 days/wk)  4) Active (5+ days/wk)",
-        "bn": "শারীরিক পরিশ্রম বা অ্যাক্টিভিটি:\n১) খুব কম (বসে থাকা)  ২) হালকা  ৩) মাঝারি (সপ্তাহে ২-৪ দিন)  ৪) সক্রিয় (সপ্তাহে ৫+ দিন)",
+        "en": "Daily physical activity level:\n1) Sedentary (very little)\n2) Light\n3) Moderate (2-4 days/wk)\n4) Active (5+ days/wk)",
+        "bn": "শারীরিক পরিশ্রম বা অ্যাক্টিভিটি:\n১) খুব কম (বসে থাকা)\n২) হালকা\n৩) মাঝারি (সপ্তাহে ২-৪ দিন)\n৪) সক্রিয় (সপ্তাহে ৫+ দিন)",
         "labels_en": ["Sedentary", "Light", "Moderate", "Active"],
         "labels_bn": ["খুব কম", "হালকা", "মাঝারি", "সক্রিয়"],
         "name_en": "Physical activity", "name_bn": "শারীরিক পরিশ্রম", "unit": ""
@@ -195,8 +201,8 @@ EXTENDED_QUESTIONS = [
     {
         "key": "meals_per_day", "kind": "choice",
         "values": ["1", "2", "3", ">3"],
-        "en": "How many main meals do you usually eat per day?\n1) 1 meal  2) 2 meals  3) 3 meals  4) More than 3 meals",
-        "bn": "প্রতিদিন সাধারণত কয়বার মূল খাবার খাওয়া হয়?\n১) ১ বার  ২) ২ বার  ৩) ৩ বার  ৪) ৩ বারের বেশি",
+        "en": "How many main meals do you usually eat per day?\n1) 1 meal\n2) 2 meals\n3) 3 meals\n4) More than 3 meals",
+        "bn": "প্রতিদিন সাধারণত কয়বার মূল খাবার খাওয়া হয়?\n১) ১ বার\n২) ২ বার\n৩) ৩ বার\n৪) ৩ বারের বেশি",
         "labels_en": ["1 meal", "2 meals", "3 meals", ">3 meals"],
         "labels_bn": ["১ বার", "২ বার", "৩ বার", ">৩ বার"],
         "name_en": "Meals per day", "name_bn": "দৈনিক খাবার সংখ্যা", "unit": ""
@@ -204,8 +210,8 @@ EXTENDED_QUESTIONS = [
     {
         "key": "food_type", "kind": "choice",
         "values": ["Home-cooked", "Fast food", "Balanced or mixed diet", "Highly processed foods"],
-        "en": "What type of food do you eat most frequently?\n1) Home-cooked  2) Fast food  3) Balanced or mixed diet  4) Processed/packaged",
-        "bn": "কোন ধরণের খাবার সবচেয়ে বেশি খাওয়া হয়?\n১) বাড়ির রান্না  ২) ফাস্ট ফুড  ৩) সুষম বা মিশ্র খাবার  ৪) প্যাকেটজাত খাবার",
+        "en": "What type of food do you eat most frequently?\n1) Home-cooked\n2) Fast food\n3) Balanced or mixed diet\n4) Processed/packaged",
+        "bn": "কোন ধরণের খাবার সবচেয়ে বেশি খাওয়া হয়?\n১) বাড়ির রান্না\n২) ফাস্ট ফুড\n৩) সুষম বা মিশ্র খাবার\n৪) প্যাকেটজাত খাবার",
         "labels_en": ["Home-cooked", "Fast food", "Balanced", "Processed"],
         "labels_bn": ["বাড়ির রান্না", "ফাস্ট ফুড", "সুষম", "প্যাকেটজাত"],
         "name_en": "Dietary pattern", "name_bn": "খাবারের ধরণ", "unit": ""
@@ -213,8 +219,8 @@ EXTENDED_QUESTIONS = [
     {
         "key": "sleep_quality", "kind": "choice",
         "values": ["Good", "Moderate", "Poor"],
-        "en": "How would you describe your overall sleep quality?\n1) Good & restful  2) Moderate  3) Poor / restless",
-        "bn": "তোমার ঘুমের মান সামগ্রিকভাবে কেমন?\n১) ভালো ও গভীর  ২) মাঝারি  ৩) খারাপ / অস্বস্তিকর",
+        "en": "How would you describe your overall sleep quality?\n1) Good & restful\n2) Moderate\n3) Poor / restless",
+        "bn": "তোমার ঘুমের মান সামগ্রিকভাবে কেমন?\n১) ভালো ও গভীর\n২) মাঝারি\n৩) খারাপ / অস্বস্তিকর",
         "labels_en": ["Good", "Moderate", "Poor"],
         "labels_bn": ["ভালো", "মাঝারি", "খারাপ"],
         "name_en": "Sleep quality", "name_bn": "ঘুমের মান", "unit": ""
@@ -222,8 +228,8 @@ EXTENDED_QUESTIONS = [
     {
         "key": "exercise_type", "kind": "choice",
         "values": ["Walking", "Cardio", "Yoga", "Home workouts", "None"],
-        "en": "What kind of exercise do you regularly do?\n1) Walking  2) Cardio / Running  3) Yoga  4) Home workouts  5) None",
-        "bn": "নিয়মিত কী ধরণের শরীরচর্চা করো?\n১) হাঁটা  ২) কার্ডিও/দৌড়ানো  ৩) যোগব্যায়াম  ৪) ঘরে ব্যায়াম  ৫) কোনোটিই না",
+        "en": "What kind of exercise do you regularly do?\n1) Walking\n2) Cardio / Running\n3) Yoga\n4) Home workouts\n5) None",
+        "bn": "নিয়মিত কী ধরণের শরীরচর্চা করো?\n১) হাঁটা\n২) কার্ডিও/দৌড়ানো\n৩) যোগব্যায়াম\n৪) ঘরে ব্যায়াম\n৫) কোনোটিই না",
         "labels_en": ["Walking", "Cardio", "Yoga", "Home workouts", "None"],
         "labels_bn": ["হাঁটা", "কার্ডিও", "যোগব্যায়াম", "ঘরে ব্যায়াম", "কোনোটিই না"],
         "name_en": "Exercise type", "name_bn": "ব্যায়ামের ধরণ", "unit": ""
@@ -231,8 +237,8 @@ EXTENDED_QUESTIONS = [
     {
         "key": "stress_relief", "kind": "choice",
         "values": ["Prayer", "Meditation", "Physical exercise", "Breathing exercises", "None"],
-        "en": "What helps you relieve stress most?\n1) Prayer / spiritual  2) Meditation / Yoga  3) Exercise  4) Deep breathing  5) None",
-        "bn": "মানসিক চাপ কমাতে কোনটি সবচেয়ে বেশি সাহায্য করে?\n১) প্রার্থনা / নামাজ  ২) মেডিটেশন / যোগ  ৩) ব্যায়াম  ৪) গভীর শ্বাস-প্রশ্বাস  ৫) কোনোটিই না",
+        "en": "What helps you relieve stress most?\n1) Prayer / spiritual\n2) Meditation / Yoga\n3) Exercise\n4) Deep breathing\n5) None",
+        "bn": "মানসিক চাপ কমাতে কোনটি সবচেয়ে বেশি সাহায্য করে?\n১) প্রার্থনা / নামাজ\n২) মেডিটেশন / যোগ\n৩) ব্যায়াম\n৪) গভীর শ্বাস-প্রশ্বাস\n৫) কোনোটিই না",
         "labels_en": ["Prayer", "Meditation", "Exercise", "Breathing", "None"],
         "labels_bn": ["প্রার্থনা", "মেডিটেশন", "ব্যায়াম", "শ্বাস-প্রশ্বাস", "কোনোটিই না"],
         "name_en": "Stress relief method", "name_bn": "চাপ কমানোর উপায়", "unit": ""
@@ -425,6 +431,8 @@ def build_extracted_features_from_answers(answers: Dict[str, Any]) -> Dict[str, 
     }
     return extracted
 
+
+# ── In-Memory Screening State Manager & Serverless Reconstruction ─────────────
 # Maps session_id -> dict state
 _screening_sessions: Dict[str, Dict[str, Any]] = {}
 
