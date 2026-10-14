@@ -2,7 +2,6 @@ from langchain_core.prompts import ChatPromptTemplate
 import safety as safety_module
 import knowledge as knowledge_module
 
-
 LESSONS = [
     {
         "title": {"en": "Phase 1: Menstrual Phase (Period) — Days 1-5", "bn": "ধাপ ১: মাসিক (পিরিয়ড) — প্রায় ১-৫ দিন"},
@@ -49,7 +48,6 @@ QUIZ = {
 QUIZ_ANSWERS = {"2", "২"}
 
 NEXT_WORDS = {"next", "n", "continue", "porer", "porer ta", "পরের", "পরেরটা", "এগোও", "skip", "বাদ"}
-
 
 def chat_learn(history, message, learn_state, language="en", assistant=None):
     """

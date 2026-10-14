@@ -70,7 +70,7 @@ def read_root():
     return FileResponse(HTML_PATH)
 
 
-# ── Load Pre-trained Models ──────────────────────────────────────────────────
+# Load Pre-trained Models
 ML_DIR = os.path.join(BASE_DIR, "ml models")
 
 rf_model = None
@@ -679,8 +679,6 @@ def _background_save_and_cleanup(extracted: dict, rf_label: str, dt_label: str, 
     session_learn_state.pop(session_id, None)
     print(f"🧹 Session cache cleaned for {session_id}")
 
-
-# ── Feedback Endpoint ────────────────────────────────────────────────────────
 @app.post("/feedback")
 def feedback(request: FeedbackRequest):
     try:
@@ -696,8 +694,6 @@ def feedback(request: FeedbackRequest):
         print(f"Feedback save error: {e}")
         return {"status": "error", "message": "Could not save feedback."}
 
-
-# ── Data Collection Helper ───────────────────────────────────────────────────
 def _save_collected_data(extracted: dict, rf_label: str, dt_label: str, svm_label: str, final_verdict: str, session_id: str):
     """Append a row to Google Sheets (or CSV fallback) for future retraining."""
     row = build_collected_data_row(extracted, rf_label, dt_label, svm_label, final_verdict)
@@ -705,144 +701,3 @@ def _save_collected_data(extracted: dict, rf_label: str, dt_label: str, svm_labe
     row["timestamp"] = datetime.now().isoformat()
 
     google_sheets.append_collected_data(row)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# [WhatsApp Integration — COMMENTED OUT due to Meta Cloud API payment issue]
-# Uncomment the block below (and the imports at the top) to restore WhatsApp.
-# ══════════════════════════════════════════════════════════════════════════════
-#
-# # ── Meta WhatsApp Cloud API Webhook Integration ──────────────────────────────
-# whatsapp_sessions: Dict[str, List[Dict[str, str]]] = {}
-#
-# async def process_hritu_response(sender_phone: str, message_text: str):
-#     """
-#     Asynchronous task to process incoming WhatsApp messages via HRITU AI Engine.
-#     Maintains multi-turn conversation memory per user phone number, auto-detects language,
-#     and dispatches responses back via Meta Graph API v22.0.
-#     """
-#     phone_number_id = (os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip().strip('"').strip("'")
-#     access_token = (os.getenv("WHATSAPP_ACCESS_TOKEN") or "").strip().strip('"').strip("'")
-#
-#     print(f"📩 Processing inbound WhatsApp message from {sender_phone}: '{message_text}'")
-#
-#     clean_phone = re.sub(r'\D', '', sender_phone)
-#
-#     # ── Handle Reset Command ──────────────────────────────────────────────────
-#     cleaned_input = message_text.strip().lower()
-#     if cleaned_input in ("reset", "restart", "clear", "new", "নতুন চ্যাট", "আলাপ শুরু"):
-#         whatsapp_sessions.pop(sender_phone, None)
-#         whatsapp_sessions.pop(clean_phone, None)
-#         has_bn = bool(re.search(r'[\u0980-\u09FF]', message_text))
-#         ai_reply = "নতুন চ্যাট শুরু করা হলো! আপনার প্রশ্নটি লিখুন। 🌸" if has_bn else "Your conversation has been reset! How can HRITU support you today? 🌸"
-#     else:
-#         user_history = whatsapp_sessions.get(clean_phone, whatsapp_sessions.get(sender_phone, []))
-#         has_bangla_script = bool(re.search(r'[\u0980-\u09FF]', message_text))
-#         lang = "bn" if has_bangla_script else "en"
-#
-#         try:
-#             if assistant:
-#                 ai_reply = await asyncio.wait_for(
-#                     asyncio.to_thread(assistant.chat_lifestyle, user_history, message_text, lang),
-#                     timeout=8.0
-#                 )
-#             else:
-#                 ai_reply = "Hello! I am HRITU, your Women's Health & PCOS AI Assistant. How can I support you today? 🌸"
-#         except Exception as e:
-#             print(f"❌ HRITU AI Engine error processing WhatsApp message: {e}")
-#             ai_reply = "Hello! I am HRITU, your Women's Health & PCOS AI Assistant. How can I support you today? 🌸"
-#
-#         user_history.append({"role": "user", "content": message_text})
-#         user_history.append({"role": "assistant", "content": ai_reply})
-#         whatsapp_sessions[clean_phone] = user_history[-16:]
-#
-#     ai_reply_formatted = re.sub(r'<[^>]+>', '', ai_reply).strip()
-#     if len(ai_reply_formatted) > 4000:
-#         ai_reply_formatted = ai_reply_formatted[:3990] + "..."
-#
-#     if not phone_number_id or not access_token:
-#         print("⚠️ Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN in environment variables.")
-#         return
-#
-#     graph_url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
-#     headers = {
-#         "Authorization": f"Bearer {access_token}",
-#         "Content-Type": "application/json"
-#     }
-#     payload = {
-#         "messaging_product": "whatsapp",
-#         "recipient_type": "individual",
-#         "to": clean_phone,
-#         "type": "text",
-#         "text": {
-#             "preview_url": False,
-#             "body": ai_reply_formatted
-#         }
-#     }
-#
-#     try:
-#         async with httpx.AsyncClient(timeout=10.0) as client:
-#             resp = await client.post(graph_url, headers=headers, json=payload)
-#             print(f"📤 Meta Graph API Dispatch Status: {resp.status_code}, Response: {resp.text}")
-#     except Exception as req_err:
-#         print(f"❌ Network exception while calling Meta Graph API: {req_err}")
-#
-#
-# @app.get("/webhook")
-# @app.get("/api/webhook")
-# def verify_whatsapp_webhook(
-#     hub_mode: Optional[str] = Query(None, alias="hub.mode"),
-#     hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
-#     hub_challenge: Optional[str] = Query(None, alias="hub.challenge"),
-# ):
-#     """
-#     Meta WhatsApp Cloud API GET Webhook Verification Handshake.
-#     Verifies that hub.mode == 'subscribe' and hub.verify_token matches WHATSAPP_VERIFY_TOKEN.
-#     Returns hub.challenge as plain text string.
-#     """
-#     expected_verify_token = (os.getenv("WHATSAPP_VERIFY_TOKEN") or "hritu_secret_webhook_token_2026").strip()
-#
-#     if hub_mode == "subscribe" and hub_verify_token == expected_verify_token:
-#         print(f"✅ Meta Webhook Verification Handshake successful! Returning challenge: {hub_challenge}")
-#         return Response(content=str(hub_challenge or "OK"), media_type="text/plain")
-#     else:
-#         print(f"❌ Webhook Verification Failed: Received mode '{hub_mode}', token '{hub_verify_token}' (Expected: '{expected_verify_token}').")
-#         raise HTTPException(status_code=403, detail="Webhook verification token mismatch.")
-#
-#
-# @app.post("/webhook")
-# @app.post("/api/webhook")
-# async def receive_whatsapp_webhook(request: Request):
-#     """
-#     Meta WhatsApp Cloud API POST Inbound Webhook.
-#     Receives real-time incoming messages, parses sender phone number and message text,
-#     and dispatches processing via HRITU AI Engine and Meta Graph API v22.0.
-#     """
-#     try:
-#         body = await request.json()
-#         print(f"📥 Received Webhook Payload: {body}")
-#
-#         entry = body.get("entry", [])
-#         for e in entry:
-#             changes = e.get("changes", [])
-#             for c in changes:
-#                 value = c.get("value", {})
-#                 messages = value.get("messages", [])
-#                 if messages:
-#                     for msg in messages:
-#                         sender_phone = msg.get("from")
-#                         msg_type = msg.get("type")
-#
-#                         if msg_type == "text":
-#                             message_text = msg.get("text", {}).get("body", "")
-#                         else:
-#                             message_text = msg.get("interactive", {}).get("button_reply", {}).get("title", "") or "Hello"
-#
-#                         if sender_phone and message_text:
-#                             print(f"📩 Processing WhatsApp message from {sender_phone}: '{message_text}'")
-#                             await process_hritu_response(sender_phone, message_text)
-#     except Exception as err:
-#         print(f"❌ Error parsing WhatsApp webhook payload: {err}")
-#
-#     # Satisfy Meta's requirement for an immediate HTTP 200 response
-#     return {"status": "ok"}

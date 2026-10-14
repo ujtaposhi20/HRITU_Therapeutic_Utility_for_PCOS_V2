@@ -1,7 +1,6 @@
 """
 sister.py — Module 2: Talk (Empathy, Emotional Support, PCOS, Women's Health & Fertility)
-Adapted from ujt_codes/sister.py with Two-Tier Hybrid RAG, Sister Empathy Protocols,
-and Anti-Blaming Guardrails.
+Adapted with Two-Tier Hybrid RAG, Sister Empathy Protocols, and Anti-Blaming Guardrails.
 """
 
 from langchain_core.prompts import ChatPromptTemplate

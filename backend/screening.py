@@ -1,8 +1,6 @@
 """
-screening.py — Conversational Slot-Filling Screening Wizard for HRITU.
-
 Features:
-  • 18 Core questions (Age, Height, Weight -> BMI, Cycle, Symptoms, Family, Lifestyle, Stress)
+  • 18 Core questions (Age, Height, Weight -> BMI, Cycle, Symptoms, Family, Lifestyle, Stress) following Rotterdam Criteria
   • No countdown numbers in chat messages (clean, warm, elder-sisterly)
   • Milestone prompt after Question 18:
       "Apu, we now have all the essential details needed to evaluate your pattern!

@@ -1,6 +1,5 @@
 """
-google_sheets.py — Google Sheets persistence layer for the PCOS AI Agent.
-
+google_sheets.py — Google Sheets persistence layer for the PCOS AI Agent. 
 Replaces ephemeral CSV writes with Google Sheets API calls so data
 survives Vercel's serverless cold starts.
 
@@ -13,7 +12,6 @@ import csv
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-# Lazy-loaded gspread client
 _sheets_client = None
 _spreadsheet = None
 

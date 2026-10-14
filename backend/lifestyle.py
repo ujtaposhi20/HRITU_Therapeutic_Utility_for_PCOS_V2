@@ -23,8 +23,7 @@ def chat_lifestyle(history, message, language="en", assistant=None):
         if "sister" in content_lower or "apu" in content_lower or "আপু" in content_lower:
             title_used_recently = True
             break
-
-    # ── Two-Tier Hybrid RAG ──────────────────────────────────────────────
+    #RAG
     rag_lang = "bn" if language == "bn" else "en"
     knowledge_context = knowledge_module.get_card_context(message, lang=rag_lang)
 

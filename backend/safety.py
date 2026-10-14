@@ -1,9 +1,7 @@
 """
 safety.py — Pre-LLM Crisis Interceptor & Post-LLM Medicine Guardrail.
-
 Runs BEFORE every LLM call (is_crisis, is_off_topic) and
 AFTER every LLM reply (check_reply) to enforce patient safety.
-
 Rule-based on purpose: safety must work even when the LLM is down.
 """
 

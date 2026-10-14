@@ -1,13 +1,10 @@
 """
 knowledge.py — Tier-1 Local Verified Knowledge Engine.
-
 Embeds 16 curated medical FAQ cards from ujt_codes/knowledge.json
 and provides instant (<5ms) TF-IDF matching for standard PCOS questions.
-
 Architecture:
   Tier 1 (this file): CPU-only TF-IDF char_wb(2,4) against verified cards.
   Tier 2 (fallback):  Live DuckDuckGo RAG in agent.py when no card matches.
-
 The threshold (MIN_SCORE) determines when a card is "confident enough"
 to use directly vs. falling through to live search.
 """
@@ -17,12 +14,9 @@ import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ─── Configuration ───────────────────────────────────────────────────────────
 MIN_SCORE = 0.12  # Minimum TF-IDF cosine similarity to trust a local card
 TOP_K = 2         # Max cards to return per query
 
-
-# ─── Load Knowledge Cards ───────────────────────────────────────────────────
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _KNOWLEDGE_PATH = os.path.join(_BASE_DIR, "knowledge_cards.json")
 
@@ -43,11 +37,6 @@ def _load_cards():
 
 CARDS = _load_cards()
 
-
-# ─── Build TF-IDF Index ─────────────────────────────────────────────────────
-# Combine English text, Bangla text, and keywords for each card into a
-# single searchable document. This gives broad coverage across languages.
-
 _documents = []
 _card_indices = []
 
@@ -61,7 +50,6 @@ for i, card in enumerate(CARDS):
     _documents.append(" ".join(doc_parts).lower())
     _card_indices.append(i)
 
-# char_wb(2,4) analyzer captures partial word matches across Bangla/English
 _vectorizer = TfidfVectorizer(
     analyzer="char_wb",
     ngram_range=(2, 4),
@@ -71,9 +59,6 @@ _vectorizer = TfidfVectorizer(
 _tfidf_matrix = None
 if _documents:
     _tfidf_matrix = _vectorizer.fit_transform(_documents)
-
-
-# ─── Public API ──────────────────────────────────────────────────────────────
 
 def search(query: str, k: int = TOP_K, min_score: float = MIN_SCORE):
     """
@@ -141,13 +126,10 @@ def get_card_context(query: str, lang: str = "en") -> str:
 
     return context
 
-
 def get_all_card_titles() -> list:
     """Return a list of all knowledge card titles (for debugging/display)."""
     return [card.get("title", "Unknown") for card in CARDS]
 
-
-# ─── Self-Test ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"Loaded {len(CARDS)} knowledge cards:")
     for title in get_all_card_titles():
