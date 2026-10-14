@@ -10,7 +10,7 @@ HRITU talks like a caring elder sister (আপু). It does not blame or judge t
 
 HRITU was built for an HCI user study at BRAC University.
 
-**Live demo:** https://YOUR-APP.vercel.app
+**Live demo:** https://hritu.vercel.app/
 
 ## What it can do
 
